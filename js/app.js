@@ -9,6 +9,7 @@ import {
   currentDepth, firstShow, goBack, hasOverlay, hasUnsavedInput, initNav, isTab, navigate, parentKey, switchTab, tabAt, tabIndex,
 } from './nav.js';
 import { generateInstances } from './recurring.js';
+import { renderAnalytics } from './screens/analytics.js';
 import { renderBarter, renderBarterAsset } from './screens/barter-screen.js';
 import { renderCloseMonth } from './screens/close-month.js';
 import { renderExpense } from './screens/expense.js';
@@ -46,6 +47,7 @@ const ROUTES = {
   '/object': { render: renderObject, nav: null },
   '/report': { render: renderReport, nav: null },
   '/recurring': { render: renderRecurring, nav: null },
+  '/analytics': { render: renderAnalytics, nav: null },
   '/barter': { render: renderBarter, nav: null },
   '/barter-asset': { render: renderBarterAsset, nav: null },
   '/refs': { render: renderRefs, nav: null },

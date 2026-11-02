@@ -1,5 +1,5 @@
 // A short form in a bottom sheet, for directories and barter steps. Fields:
-// { key, label, type: 'text'|'number'|'amount'|'rate'|'date'|'select', value, options, optional }.
+// { key, label, type: 'text'|'number'|'amount'|'rate'|'date'|'select', value, options, optional, hint }.
 import { amountToTyping, formatRate, formatTyping, parseAmount, parseRate } from '../money.js';
 import { confirmSheet } from './confirm.js';
 import { el } from './dom.js';
@@ -71,7 +71,8 @@ export function editSheet({ title, fields, saveLabel = 'Сохранить', onS
       body: el('div', { class: 'edit-sheet' },
         el('div', { class: 'edit-fields' }, fields.map((field) => el('label', { class: 'edit-field' },
           el('span', { class: 'chips-label' }, field.optional ? `${field.label}, необязательно` : field.label),
-          controls.get(field.key)))),
+          controls.get(field.key),
+          field.hint && el('span', { class: 'field-hint' }, field.hint)))),
         error,
         el('button', { class: 'button button-primary', type: 'button', 'data-action': 'sheet-save', onClick: save }, saveLabel),
         secondAction && el('button', { class: 'list-action', type: 'button', 'data-action': 'sheet-second', onClick: () => secondAction.run() }, secondAction.label),

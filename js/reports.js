@@ -2,11 +2,15 @@
 // and leave barter accounts out. Object costs include barter and unpaid debts: they
 // answer what the object really cost, not where the money went (SPEC §6, §9).
 import { db, getSettings } from './db.js';
-import { balanceFromTransactions, isMoneyAccount, shortName, sortAccounts } from './ledger.js';
-import { formatDate, monthName, monthOf } from './money.js';
+import { barterDebts } from './barter.js';
+import {
+  allBalances, balanceFromTransactions, isMoneyAccount, lenderBalances, openDebts, personName, shortName, sortAccounts,
+} from './ledger.js';
+import { formatDate, monthName, monthOf, toKgs } from './money.js';
 
 const TOP_OBJECTS = 3;
 const BARTER_SALES = 'Продажа бартерного имущества';
+const BARTER_DEBT_RETURNS = 'Возврат долга по бартеру';
 
 function costMonth(tx) {
   return monthOf(tx.cost_date ?? tx.date);
@@ -137,6 +141,7 @@ export async function cashFlowReport(month) {
   const expense = new Map();
   const transfers = [];
   let barterSales = 0;
+  let barterDebtReturns = 0;
 
   for (const tx of inMonth) {
     if (isIncome(tx) && isMoney.has(tx.account_id)) {
@@ -148,7 +153,10 @@ export async function cashFlowReport(month) {
       if (!expense.has(group)) expense.set(group, new Map());
       addTo(expense.get(group), shortName(category.name), signOf(tx) * tx.amount_kgs);
     } else if (tx.type === 'transfer') {
-      if (!isMoney.has(tx.account_id) && isMoney.has(tx.to_account_id)) barterSales += tx.amount_kgs;
+      if (!isMoney.has(tx.account_id) && isMoney.has(tx.to_account_id)) {
+        if (tx.barter_kind === 'debt_return') barterDebtReturns += tx.amount_kgs;
+        else barterSales += tx.amount_kgs;
+      }
       else if (isMoney.has(tx.account_id) && isMoney.has(tx.to_account_id)) transfers.push(tx);
     }
   }
@@ -160,6 +168,7 @@ export async function cashFlowReport(month) {
   })).sort((a, b) => b.total - a.total);
   const incomeRows = [...income.entries()].map(([name, amount]) => ({ name, amount })).sort((a, b) => b.amount - a.amount);
   if (barterSales > 0) incomeRows.push({ name: BARTER_SALES, amount: barterSales });
+  if (barterDebtReturns > 0) incomeRows.push({ name: BARTER_DEBT_RETURNS, amount: barterDebtReturns });
 
   return {
     month,
@@ -332,16 +341,21 @@ export async function barterReport(month) {
   const inPeriod = reimbursements.filter((tx) => monthOf(tx.date) === month);
   return {
     title: 'Реестр бартера',
-    columns: [text('Машина'), text('Покупатель, квартира'), text('Статус'), text('Кому передана'), amountColumn('Оценка в сомах'), amountColumn('Возмещено в сомах'), text('Причина, согласовал')],
+    columns: [text('Машина'), text('Покупатель, квартира'), text('Статус'), text('Кому передана'), amountColumn('Оценка в сомах'), amountColumn('Долг подрядчика в сомах'), amountColumn('Возмещено в сомах'), text('Причина, согласовал')],
     rows: assets.map((asset) => {
       const own = reimbursements.filter((tx) => tx.barter_asset_id === asset.id);
-      const income = transactions.find((tx) => tx.barter_asset_id === asset.id && tx.type === 'income');
+      const income = transactions.find((tx) => tx.barter_asset_id === asset.id && tx.type === 'income' && !tx.reversal_kind);
+      const barter = [...refs.accounts.values()].find((account) => account.type === 'barter' && account.currency === asset.currency);
+      const left = asset.status === 'transferred'
+        ? balanceFromTransactions({ id: barter.id, opening_balance: 0 }, transactions.filter((tx) => tx.barter_asset_id === asset.id))
+        : 0;
       return [
         asset.name,
         `${refs.counterparties.get(asset.buyer_id)?.name ?? ''}, кв. ${asset.apartment}`,
         statuses[asset.status],
         refs.counterparties.get(asset.transferred_to_id)?.name ?? '',
         income?.amount_kgs ?? 0,
+        asset.currency === 'USD' ? toKgs(left, income?.rate ?? 0) : left,
         own.reduce((sum, tx) => sum + tx.amount_kgs, 0),
         own.map((tx) => `${tx.barter_meta.reason}, ${tx.barter_meta.approved_by}${tx.doc_type === 'none' ? ', без документа' : ''}`).join('; '),
       ];
@@ -349,6 +363,103 @@ export async function barterReport(month) {
     total: inPeriod.reduce((sum, tx) => sum + tx.amount_kgs, 0),
     total_label: 'Возмещено за период',
   };
+}
+
+// Costs of a period split one way, largest first, for the charts. `month` null means
+// all time; `group` narrows articles to one group of articles.
+export async function costBreakdown({ month = null, by, group = null }) {
+  const [transactions, objects, categories] = await Promise.all([
+    db.transactions.toArray(), db.objects.toArray(), db.categories.toArray(),
+  ]);
+  const objectsById = new Map(objects.map((row) => [row.id, row]));
+  const categoriesById = new Map(categories.map((row) => [row.id, row]));
+  const items = new Map();
+  let paid = 0;
+  let owed = 0;
+  for (const tx of transactions) {
+    if (!isCost(tx) || (month && costMonth(tx) !== month)) continue;
+    const category = categoriesById.get(tx.category_id);
+    const parent = categoriesById.get(category?.parent_id);
+    if (group && (parent?.id ?? 'other') !== group) continue;
+    let key;
+    let label;
+    if (by === 'objects') {
+      key = tx.object_id;
+      label = objectsById.get(tx.object_id)?.name ?? 'Без объекта';
+    } else if (by === 'groups') {
+      key = parent?.id ?? 'other';
+      label = parent?.name ?? 'Прочее';
+    } else {
+      key = category?.id ?? 'other';
+      label = shortName(category?.name ?? 'Прочее');
+    }
+    const amount = signOf(tx) * tx.amount_kgs;
+    if (tx.status === 'posted') paid += amount;
+    else owed += amount;
+    const item = items.get(key) ?? { key, label, amount: 0 };
+    item.amount += amount;
+    items.set(key, item);
+  }
+  return {
+    total: paid + owed,
+    paid,
+    owed,
+    items: [...items.values()].filter((item) => item.amount !== 0).sort((a, b) => b.amount - a.amount),
+  };
+}
+
+// Everything the company owes and everything owed to it, one row per debt, in soms.
+// Home totals and the debt charts read the same list, so they always agree.
+export async function debtsOverview() {
+  const [debts, lenders, balances, barter, accounts, counterparties, settings] = await Promise.all([
+    openDebts(), lenderBalances(), allBalances(), barterDebts(), db.accounts.toArray(), db.counterparties.toArray(), getSettings(),
+  ]);
+  const accountsById = new Map(accounts.map((row) => [row.id, row]));
+  const names = new Map(counterparties.map((row) => [row.id, row.name]));
+  const rate = settings.last_usd_rate ?? 0;
+  const weOwe = [
+    ...debts.map((tx) => {
+      const person = accountsById.get(tx.account_id);
+      const viaPerson = person?.type === 'imprest' ? personName(person) : null;
+      return {
+        kind: 'debt',
+        tx,
+        creditor_key: tx.counterparty_id ?? person?.id ?? 'none',
+        creditor: names.get(tx.counterparty_id) ?? viaPerson ?? 'Поставщик не указан',
+        object_id: tx.object_id,
+        amount: tx.amount_kgs,
+        due_date: tx.due_date ?? null,
+      };
+    }),
+    ...lenders.filter((entry) => entry.owed > 0).map((entry) => ({
+      kind: entry.source_kind === 'founder' ? 'founder' : 'loan',
+      creditor_key: entry.counterparty_id,
+      creditor: names.get(entry.counterparty_id) ?? '',
+      object_id: null,
+      amount: entry.owed,
+      due_date: entry.due_date,
+    })),
+    ...accounts.filter((account) => account.type === 'imprest' && balances.get(account.id) < 0).map((account) => ({
+      kind: 'own_money',
+      account,
+      creditor_key: account.id,
+      creditor: personName(account),
+      object_id: null,
+      amount: -balances.get(account.id),
+      due_date: null,
+    })),
+  ];
+  const owedToUs = barter.map((entry) => ({
+    kind: 'barter',
+    asset: entry.asset,
+    debtor_key: entry.contractor_id,
+    debtor: names.get(entry.contractor_id) ?? '',
+    owed: entry.owed,
+    currency: entry.asset.currency,
+    amount: entry.asset.currency === 'USD' ? toKgs(entry.owed, rate) : entry.owed,
+  }));
+  const sum = (rows) => rows.reduce((total, row) => total + row.amount, 0);
+  return { we_owe: weOwe, owed_to_us: owedToUs, we_owe_total: sum(weOwe), owed_to_us_total: sum(owedToUs) };
 }
 
 export const LIST_REPORTS = {

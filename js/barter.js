@@ -1,8 +1,10 @@
 // Barter operations (SPEC §8). Each step is a normal ledger operation on a
 // service account plus a change to the barter asset card.
 import { db, insertRow, updateRow } from './db.js';
-import { LedgerError, createExpense, createIncome, createTransfer, ledgerTransaction } from './ledger.js';
-import { daysBetween } from './money.js';
+import {
+  LedgerError, balanceFromTransactions, createExpense, createIncome, createTransfer, ledgerTransaction,
+} from './ledger.js';
+import { daysBetween, formatMoney } from './money.js';
 
 export const HELD_WARNING_DAYS = 60;
 
@@ -53,18 +55,29 @@ export async function receiveAsset({ name, vin = '', plate = '', location = '', 
   });
 }
 
-// Step 2: a car always moves for its full valuation, in a single operation.
-export async function transferToContractor(assetId, { contractor_id, category_id, rate, date, doc_type, doc_number = '' }) {
+// Step 2: a car always moves for its full valuation. When the work costs less, the
+// expense is the work only and the rest of the valuation stays on the barter account
+// under this car: the contractor owes it until settled by work or money.
+export async function transferToContractor(assetId, { contractor_id, category_id, rate, date, doc_type, doc_number = '', work_amount = null }) {
   return ledgerTransaction([], async () => {
     const asset = await db.barter_assets.get(assetId);
     if (asset.status !== 'held') {
       throw new LedgerError('invalid', [{ code: 'not_held', message: 'Машина уже не у компании' }]);
     }
+    const work = work_amount ?? asset.valuation;
+    if (!(work > 0)) throw new LedgerError('invalid', [{ field: 'work_amount', code: 'required', message: 'Укажите стоимость работ' }]);
+    if (work > asset.valuation) {
+      throw new LedgerError('invalid', [{
+        field: 'work_amount',
+        code: 'over_valuation',
+        message: 'Работы дороже машины. Передайте её на полную оценку, а остаток запишите долгом подрядчику',
+      }]);
+    }
     const account = await barterAccount(asset.currency);
     await createExpense({
       date,
       account_id: account.id,
-      amount: asset.valuation,
+      amount: work,
       rate,
       object_id: asset.object_id,
       category_id,
@@ -107,6 +120,93 @@ export async function reimburseDifference(assetId, { account_id, amount, rate, s
       barter_meta: { sale_price, reason: reason.trim(), approved_by: approved_by.trim() },
     }, { confirmed });
     return updateRow('barter_assets', assetId, { reimbursed_total: asset.reimbursed_total + amount }, 'reimburse');
+  });
+}
+
+// What the contractor still owes for one car: the part of its valuation left on the
+// barter account after the handover. Computed from operations, never stored.
+function debtOf(asset, account, transactions) {
+  const own = transactions.filter((tx) => tx.barter_asset_id === asset.id);
+  return balanceFromTransactions({ id: account.id, opening_balance: 0 }, own);
+}
+
+// Contractors who owe the company for cars given against cheaper work, oldest first.
+export async function barterDebts() {
+  const [assets, accounts] = await Promise.all([
+    db.barter_assets.where('status').equals('transferred').toArray(),
+    db.accounts.where('type').equals('barter').toArray(),
+  ]);
+  if (assets.length === 0) return [];
+  const transactions = await db.transactions.where('barter_asset_id').anyOf(assets.map((asset) => asset.id)).toArray();
+  return assets
+    .map((asset) => ({
+      asset,
+      contractor_id: asset.transferred_to_id,
+      owed: debtOf(asset, accounts.find((account) => account.currency === asset.currency), transactions),
+    }))
+    .filter((entry) => entry.owed > 0)
+    .sort((a, b) => a.asset.transferred_date.localeCompare(b.asset.transferred_date));
+}
+
+export async function assetDebt(assetId) {
+  const asset = await db.barter_assets.get(assetId);
+  if (asset?.status !== 'transferred') return 0;
+  const [account, transactions] = await Promise.all([
+    barterAccount(asset.currency), db.transactions.where('barter_asset_id').equals(assetId).toArray(),
+  ]);
+  return debtOf(asset, account, transactions);
+}
+
+async function owingAsset(assetId, amount) {
+  const asset = await db.barter_assets.get(assetId);
+  const owed = await assetDebt(assetId);
+  if (owed <= 0) throw new LedgerError('invalid', [{ code: 'no_debt', message: 'По этой машине долга нет' }]);
+  if (!(amount > 0)) throw new LedgerError('invalid', [{ field: 'amount', code: 'required', message: 'Укажите сумму' }]);
+  if (amount > owed) {
+    throw new LedgerError('invalid', [{ field: 'amount', code: 'over_owed', message: `Долг подрядчика — только ${formatMoney(owed, asset.currency)}` }]);
+  }
+  return asset;
+}
+
+// The contractor works off the debt: a cost of the object, paid with the car.
+export async function settleDebtByWork(assetId, { amount, category_id, object_id, rate, date, doc_type, doc_number = '' }, { confirmed = [] } = {}) {
+  return ledgerTransaction([], async () => {
+    const asset = await owingAsset(assetId, amount);
+    const account = await barterAccount(asset.currency);
+    return createExpense({
+      date,
+      account_id: account.id,
+      amount,
+      rate,
+      object_id: object_id ?? asset.object_id,
+      category_id,
+      counterparty_id: asset.transferred_to_id,
+      description: `Зачёт работ за ${asset.name}`,
+      doc_type,
+      doc_number,
+      barter_asset_id: asset.id,
+      barter_kind: 'debt_work',
+    }, { confirmed });
+  });
+}
+
+// The contractor pays the debt back: money arrives from the barter account, like a sale.
+export async function settleDebtByMoney(assetId, { amount, account_id, to_amount, rate, date }, { confirmed = [] } = {}) {
+  return ledgerTransaction([], async () => {
+    const asset = await owingAsset(assetId, amount);
+    const barter = await barterAccount(asset.currency);
+    return createTransfer({
+      date,
+      account_id: barter.id,
+      to_account_id: account_id,
+      amount,
+      to_amount,
+      rate,
+      counterparty_id: asset.transferred_to_id,
+      description: `Долг за ${asset.name}`,
+      barter_asset_id: asset.id,
+      barter_kind: 'debt_return',
+    }, { confirmed });
   });
 }
 

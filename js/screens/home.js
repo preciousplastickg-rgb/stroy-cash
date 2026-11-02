@@ -8,7 +8,7 @@ import {
   daysBetween, formatDate, formatDayMonth, formatMoney, formatRate, monthName, monthOf, toKgs, todayIso,
 } from '../money.js';
 import { dueSoon } from '../recurring.js';
-import { monthExpenseSummary } from '../reports.js';
+import { debtsOverview, monthExpenseSummary } from '../reports.js';
 import { debtDueText, debtRow } from '../ui/debt-row.js';
 import { el } from '../ui/dom.js';
 import { firstIssue } from '../ui/form.js';
@@ -27,14 +27,25 @@ function sumInKgs(accounts, balances, rate) {
   }, 0);
 }
 
-function totalCard({ accounts, balances, settings }) {
+// The headline: money that exists right now, then what the company owes and what
+// it is owed. Each figure opens its chart.
+function totalCard({ accounts, balances, settings, overview }) {
   const money = accounts.filter(isMoneyAccount);
   const rate = settings.last_usd_rate;
   const total = sumInKgs(money, balances, rate);
+  const atPeople = sumInKgs(money.filter((account) => account.type === 'imprest' && balances.get(account.id) > 0), balances, rate);
+  const notes = [atPeople > 0 && `из них у людей ${formatMoney(atPeople, 'KGS')}`, rate && `доллар по ${formatRate(rate)}`].filter(Boolean);
+  const figure = (label, value, href, testId, tone) => el('a', { class: `total-figure${tone ? ` ${tone}` : ''}`, href, 'data-testid': testId },
+    el('span', { class: 'total-figure-label' }, label),
+    el('span', { class: 'total-figure-value' }, formatMoney(value, 'KGS')));
   return el('section', { class: 'total' },
-    el('p', { class: 'total-label' }, 'Всего денег'),
-    el('p', { class: 'total-value', 'data-testid': 'total' }, formatMoney(total, 'KGS')),
-    rate && el('p', { class: 'total-note' }, `Доллар считаю по ${formatRate(rate)}`));
+    el('a', { class: 'total-main', href: '#/analytics', 'data-action': 'money-chart' },
+      el('p', { class: 'total-label' }, 'Деньги сейчас', icon('chevron', 'total-chevron')),
+      el('p', { class: 'total-value', 'data-testid': 'total' }, formatMoney(total, 'KGS')),
+      notes.length > 0 && el('p', { class: 'total-note' }, notes.join(' · '))),
+    el('div', { class: 'total-figures' },
+      figure('Мы должны', overview.we_owe_total, '#/analytics?view=debts', 'debt-sum', overview.we_owe_total > 0 ? 'owe' : ''),
+      figure('Нам должны', overview.owed_to_us_total, '#/analytics?view=debts&split=owed', 'owed-sum', overview.owed_to_us_total > 0 ? 'owed' : '')));
 }
 
 function backupBanner(settings, today, refresh) {
@@ -128,22 +139,36 @@ function lenderRow(entry, refs, today) {
 
 // Every debt on its own row, nearest deadline first. A negative imprest balance is
 // a debt too: that person spent their own money. So is money from the founder or a loan.
-function debtsCard({ debts, lenders, accounts, balances, refs, today }) {
+function debtsCard({ debts, lenders, accounts, balances, refs, today, overview }) {
   const ownMoney = accounts
     .filter((account) => account.type === 'imprest' && balances.get(account.id) < 0)
     .map((account) => ({ account, amount: -balances.get(account.id) }));
   if (debts.length === 0 && ownMoney.length === 0 && lenders.length === 0) return null;
-  const total = debts.reduce((sum, tx) => sum + tx.amount_kgs, 0)
-    + ownMoney.reduce((sum, entry) => sum + entry.amount, 0)
-    + lenders.reduce((sum, entry) => sum + entry.owed, 0);
   return el('section', { class: 'card' },
     el('div', { class: 'card-head' },
       el('h2', {}, 'Мы должны'),
-      el('p', { class: 'card-sum', 'data-testid': 'debt-total' }, formatMoney(total, 'KGS'))),
+      el('a', { class: 'card-sum card-sum-link', href: '#/analytics?view=debts', 'data-testid': 'debt-total' }, formatMoney(overview.we_owe_total, 'KGS'))),
     el('ul', { class: 'rows' },
       debts.map((tx) => debtRow(tx, refs, today)),
       lenders.map((entry) => lenderRow(entry, refs, today)),
       ownMoney.map(({ account, amount }) => ownMoneyRow(account, amount))));
+}
+
+// Contractors who got a car worth more than their work (SPEC §8).
+function owedCard({ overview, refs }) {
+  if (overview.owed_to_us.length === 0) return null;
+  return el('section', { class: 'card' },
+    el('div', { class: 'card-head' },
+      el('h2', {}, 'Нам должны'),
+      el('a', { class: 'card-sum card-sum-link', href: '#/analytics?view=debts&split=owed', 'data-testid': 'owed-total' }, formatMoney(overview.owed_to_us_total, 'KGS'))),
+    el('ul', { class: 'rows' }, overview.owed_to_us.map((row) => el('li', {}, el('a', {
+      class: 'row row-button', href: `#/barter-asset?id=${row.asset.id}`, 'data-owed': row.debtor,
+    },
+    badge('car', 'brown'),
+    el('div', { class: 'row-main' },
+      el('p', { class: 'row-title' }, row.debtor || refs.counterparties.get(row.debtor_key)?.name || ''),
+      el('p', { class: 'row-sub' }, `За ${row.asset.name}`)),
+    el('p', { class: 'row-amount' }, formatMoney(row.owed, row.currency)))))));
 }
 
 function dueLabel(item) {
@@ -188,7 +213,7 @@ function spendingCard({ summary, today }) {
   return el('section', { class: 'card' },
     el('div', { class: 'card-head' },
       el('h2', {}, `Затраты за ${monthName(monthOf(today))}`),
-      el('p', { class: 'card-sum', 'data-testid': 'month-cost' }, formatMoney(summary.total, 'KGS'))),
+      el('a', { class: 'card-sum card-sum-link', href: '#/analytics?split=groups', 'data-testid': 'month-cost' }, formatMoney(summary.total, 'KGS'))),
     summary.owed > 0 && el('p', { class: 'card-note' }, `Оплачено ${formatMoney(summary.paid, 'KGS')}, ещё должны ${formatMoney(summary.owed, 'KGS')}`),
     summary.top_objects.length > 0 && el('ul', { class: 'rows' }, summary.top_objects.map(objectCostRow)));
 }
@@ -251,7 +276,7 @@ function actionBar() {
 }
 
 async function loadHome(today) {
-  const [accounts, objects, categories, counterparties, settings, balances, due, summary, held, latest, debts, templates, lenders] = await Promise.all([
+  const [accounts, objects, categories, counterparties, settings, balances, due, summary, held, latest, debts, templates, lenders, overview] = await Promise.all([
     db.accounts.toArray(),
     db.objects.toArray(),
     db.categories.toArray(),
@@ -265,6 +290,7 @@ async function loadHome(today) {
     openDebts(),
     db.recurring_templates.count(),
     lenderBalances(),
+    debtsOverview(),
   ]);
   const byId = (rows) => new Map(rows.map((row) => [row.id, row]));
   return {
@@ -277,6 +303,7 @@ async function loadHome(today) {
     latest,
     debts,
     lenders,
+    overview,
     templates,
     today,
     refs: { accounts: byId(accounts), objects: byId(objects), categories: byId(categories), counterparties: byId(counterparties) },
@@ -301,6 +328,7 @@ export function renderHome({ view, isCurrent }) {
       accountsCard(data),
       peopleCard(data),
       debtsCard(data),
+      owedCard(data),
       dueCard(data),
       spendingCard(data),
       barterCard(data, show),

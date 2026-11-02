@@ -350,6 +350,7 @@ function transactionFields(draft, account, toAccount) {
     recurring_instance_id: draft.recurring_instance_id ?? null,
     barter_asset_id: draft.barter_asset_id ?? null,
     barter_meta: draft.barter_meta ?? null,
+    barter_kind: draft.barter_kind ?? null,
     parent_transaction_id: draft.parent_transaction_id ?? null,
   };
 }

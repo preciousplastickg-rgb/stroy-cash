@@ -28,6 +28,7 @@ const PATHS = {
   trash: 'M5 7h14 M10 4h4 M7 7l1 13h8l1-13',
   plus: 'M12 5v14 M5 12h14',
   play: 'M8 5l11 7-11 7z',
+  chevron: 'M9 5l7 7-7 7',
 };
 
 export function icon(name, className = 'icon') {
