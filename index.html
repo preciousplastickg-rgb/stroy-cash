@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
+  <meta name="theme-color" content="#f3f2ee">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="Касса">
+  <title>Касса стройки</title>
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icons/icon-192.png" type="image/png">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+  <link rel="stylesheet" href="css/app.css">
+</head>
+<body>
+  <div id="app">
+    <main id="view" tabindex="-1"></main>
+    <div id="actions"></div>
+    <nav id="nav" aria-label="Разделы">
+      <a href="#/" data-nav="home">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 11 12 4l8 7v9h-5v-6H9v6H4z"/></svg>
+        <span>Главная</span>
+      </a>
+      <a href="#/journal" data-nav="journal">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 4h14v16H5zM9 9h6M9 13h6M9 17h3"/></svg>
+        <span>Журнал</span>
+      </a>
+      <a href="#/objects" data-nav="objects">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20V9l6-4v15M10 20V10h10v10M3 20h18M14 14h2M14 17h2"/></svg>
+        <span>Объекты</span>
+      </a>
+      <a href="#/reports" data-nav="reports">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 20v-7M12 20V5M19 20v-10"/></svg>
+        <span>Отчёты</span>
+      </a>
+      <a href="#/more" data-nav="more">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 7h14M5 12h14M5 17h14"/></svg>
+        <span>Ещё</span>
+      </a>
+    </nav>
+  </div>
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>

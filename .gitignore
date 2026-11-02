@@ -1,0 +1,11 @@
+# The public repository holds only the app that GitHub Pages serves.
+# Specs, project instructions, tests and dev tools stay on this Mac.
+node_modules/
+docs/
+tests/
+screenshots/
+CLAUDE.md
+package.json
+package-lock.json
+Запустить.command
+.DS_Store
