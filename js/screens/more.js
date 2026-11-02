@@ -9,6 +9,7 @@ import { clearPin, isPinSet } from '../security.js';
 import { seedDemo, startClean } from '../seed.js';
 import { confirmSheet } from '../ui/confirm.js';
 import { el } from '../ui/dom.js';
+import { badge } from '../ui/icons.js';
 import { editSheet } from '../ui/edit-sheet.js';
 import { firstIssue } from '../ui/form.js';
 import { openPicker } from '../ui/picker.js';
@@ -72,14 +73,42 @@ function menu(title, rows) {
     el('ul', { class: 'rows' }, rows));
 }
 
+// Each item gets the coloured icon of iOS settings: the eye finds a row by colour first.
+const ICONS = {
+  'Регулярные платежи': ['repeat', 'blue'],
+  'Бартер': ['car', 'brown'],
+  'Закрытие месяца': ['calendar', 'red'],
+  'Счета': ['bank', 'blue'],
+  'Объекты': ['building', 'orange'],
+  'Статьи и группы': ['tag', 'purple'],
+  'Контрагенты': ['briefcase', 'teal'],
+  'Люди': ['people', 'gray'],
+  'Сделать быстрый бэкап': ['backup', 'green'],
+  'Фото за месяц': ['photo', 'indigo'],
+  'Восстановить из бэкапа': ['restore', 'gray'],
+  'Включить PIN': ['lock', 'gray'],
+  'Сменить PIN': ['lock', 'gray'],
+  'Отключить PIN': ['lock', 'gray'],
+  'Название компании': ['briefcase', 'gray'],
+  'Курс доллара': ['rate', 'green'],
+  'Сбросить демо-данные': ['restore', 'red'],
+  'Начать работу со своими данными': ['play', 'red'],
+};
+
+function lead(label) {
+  const [name, tone] = ICONS[label] ?? ['list', 'gray'];
+  return badge(name, tone);
+}
+
 function link(label, href) {
-  return el('li', {}, el('a', { class: 'row row-compact row-button chevron', href, 'data-menu': label }, el('p', { class: 'row-title' }, label)));
+  return el('li', {}, el('a', { class: 'row row-compact row-button menu-row chevron', href, 'data-menu': label },
+    lead(label), el('p', { class: 'row-title' }, label)));
 }
 
 function action(label, onClick, danger = false) {
   return el('li', {}, el('button', {
-    class: `row row-compact row-button${danger ? ' danger-text' : ''}`, type: 'button', 'data-menu': label, onClick,
-  }, el('span', { class: 'row-title' }, label)));
+    class: `row row-compact row-button menu-row${danger ? ' danger-text' : ''}`, type: 'button', 'data-menu': label, onClick,
+  }, lead(label), el('span', { class: 'row-title' }, label)));
 }
 
 export function renderMore({ view, isCurrent }) {

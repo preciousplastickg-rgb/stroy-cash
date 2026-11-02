@@ -12,6 +12,7 @@ import { monthExpenseSummary } from '../reports.js';
 import { debtDueText, debtRow } from '../ui/debt-row.js';
 import { el } from '../ui/dom.js';
 import { firstIssue } from '../ui/form.js';
+import { accountBadge, badge, icon } from '../ui/icons.js';
 import { operationRow } from '../ui/operation-row.js';
 import { openPicker } from '../ui/picker.js';
 import { toast } from '../ui/toast.js';
@@ -41,7 +42,8 @@ function backupBanner(settings, today, refresh) {
   const age = lastBackup ? daysBetween(lastBackup, today) : null;
   if (age !== null && age <= BACKUP_WARNING_DAYS) return null;
   return el('section', { class: 'banner' },
-    el('p', {}, age === null ? 'Бэкапа ещё не было' : `Бэкап: ${age} дн. назад`),
+    icon('backup', 'banner-icon'),
+    el('p', {}, age === null ? 'Бэкапа ещё не было' : `Бэкап был ${age} дн. назад`),
     el('button', {
       class: 'banner-action',
       type: 'button',
@@ -76,14 +78,18 @@ function setupCard({ accounts, refs, templates }) {
 function accountsCard({ accounts, balances }) {
   const visible = sortAccounts(accounts.filter((account) => isCashTotalAccount(account) && !account.is_archived));
   if (visible.length === 0) return null;
-  return el('section', { class: 'card' }, el('ul', { class: 'rows' }, visible.map((account) => el('li', {},
-    el('a', { class: 'row row-compact row-button', href: `#/journal?account=${account.id}&month=` },
-      el('p', { class: 'row-title' }, account.name),
-      el('p', { class: 'row-amount', 'data-account': account.name }, formatMoney(balances.get(account.id), account.currency)))))));
+  return el('section', { class: 'card' },
+    el('div', { class: 'card-head' }, el('h2', {}, 'Счета')),
+    el('ul', { class: 'rows' }, visible.map((account) => el('li', {},
+      el('a', { class: 'row row-compact row-button', href: `#/journal?account=${account.id}&month=` },
+        accountBadge(account),
+        el('p', { class: 'row-title' }, account.name),
+        el('p', { class: 'row-amount', 'data-account': account.name }, formatMoney(balances.get(account.id), account.currency)))))));
 }
 
 function personRow(account, balance) {
   return el('li', {}, el('a', { class: 'row row-compact row-button', href: `#/person?id=${account.id}`, 'data-person': personName(account) },
+    badge('person', 'gray'),
     el('p', { class: 'row-title' }, personName(account)),
     el('p', { class: `row-amount${balance < 0 ? ' owed' : ''}`, 'data-account': account.name }, formatMoney(balance, account.currency))));
 }
@@ -232,11 +238,16 @@ function operationsCard({ latest, refs }) {
     el('ul', { class: 'rows' }, latest.map((tx) => operationRow(tx, refs))));
 }
 
+// The main actions sit on the screen itself, one tap away, without a second bar
+// over the tabs. Expense is the main scenario, so it is the filled one.
 function actionBar() {
-  return el('div', { class: 'action-bar' },
-    el('a', { class: 'button button-primary action-main', href: '#/expense/new' }, 'Расход'),
-    el('a', { class: 'button', href: '#/income' }, 'Приход'),
-    el('a', { class: 'button', href: '#/transfer' }, 'Перевод'));
+  const tile = (label, href, name, primary = false) => el('a', { class: `quick-action${primary ? ' primary' : ''}`, href },
+    icon(name, 'quick-icon'), el('span', {}, label));
+  return el('nav', { class: 'quick-actions action-bar', 'aria-label': 'Действия' },
+    tile('Расход', '#/expense/new', 'expense', true),
+    tile('Приход', '#/income', 'income'),
+    tile('Перевод', '#/transfer', 'transfer'),
+    tile('Выдать', '#/issue', 'give'));
 }
 
 async function loadHome(today) {
@@ -272,8 +283,7 @@ async function loadHome(today) {
   };
 }
 
-export function renderHome({ view, actions, isCurrent }) {
-  actions.replaceChildren(actionBar());
+export function renderHome({ view, isCurrent }) {
   const today = todayIso();
 
   async function show() {
@@ -285,6 +295,7 @@ export function renderHome({ view, actions, isCurrent }) {
         el('p', { class: 'home-company' }, data.settings.company_name),
         el('p', { class: 'home-date' }, formatDayMonth(today))),
       totalCard(data),
+      actionBar(),
       setupCard(data),
       data.latest.length > 0 && backupBanner(data.settings, today, show),
       accountsCard(data),

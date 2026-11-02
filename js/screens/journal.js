@@ -2,7 +2,7 @@
 import { db } from '../db.js';
 import { replaceParams } from '../nav.js';
 import { openDebts, shortName, sortAccounts } from '../ledger.js';
-import { formatDate, formatMoney, monthOf, todayIso } from '../money.js';
+import { formatDate, formatDayMonth, formatMoney, monthOf, todayIso } from '../money.js';
 import { monthTitle } from '../reports.js';
 import { debtRow } from '../ui/debt-row.js';
 import { el } from '../ui/dom.js';
@@ -181,8 +181,20 @@ export function renderJournal({ view, params, isCurrent }) {
     renderChips();
     const rows = filters.type === 'planned' ? [] : selected();
     const planned = plannedSection();
-    const operations = rows.length > 0 && el('section', { class: 'card' },
-      el('ul', { class: 'rows' }, rows.slice(0, shown).map((tx) => operationRow(tx, data.refs))));
+    const days = [];
+    for (const tx of rows.slice(0, shown)) {
+      if (days.at(-1)?.date !== tx.date) days.push({ date: tx.date, rows: [] });
+      days.at(-1).rows.push(tx);
+    }
+    const year = todayIso().slice(0, 4);
+    const operations = days.map((day) => {
+      const spent = day.rows.filter((tx) => tx.type === 'expense' && tx.status === 'posted').reduce((sum, tx) => sum + tx.amount_kgs, 0);
+      return el('section', { class: 'card', 'data-day': day.date },
+        el('div', { class: 'card-head' },
+          el('h2', {}, day.date.startsWith(year) ? formatDayMonth(day.date) : formatDate(day.date)),
+          spent > 0 && el('p', { class: 'card-sum muted' }, formatMoney(-spent, 'KGS'))),
+        el('ul', { class: 'rows' }, day.rows.map((tx) => operationRow(tx, data.refs, { showDate: false }))));
+    });
     const more = rows.length > shown && el('button', {
       class: 'button journal-more',
       type: 'button',
@@ -192,7 +204,7 @@ export function renderJournal({ view, params, isCurrent }) {
       },
     }, `Показать ещё, осталось ${rows.length - shown}`);
     const empty = !planned && rows.length === 0 && el('p', { class: 'stub-note' }, 'Ничего не найдено');
-    list.replaceChildren(...[planned, operations, more, empty].filter(Boolean));
+    list.replaceChildren(...[planned, ...operations, more, empty].filter(Boolean));
 
     const posted = rows.filter((tx) => tx.status === 'posted');
     const sum = (type) => posted.filter((tx) => tx.type === type).reduce((total, tx) => total + tx.amount_kgs, 0);

@@ -20,13 +20,14 @@ export function debtRow(tx, refs, today) {
   const supplier = refs.counterparties.get(tx.counterparty_id)?.name;
   const account = refs.accounts.get(tx.account_id);
   const { text, overdue } = debtDueText(tx, today);
+  const soon = !overdue && tx.due_date && daysBetween(today, tx.due_date) <= 3;
   return el('li', {}, el('a', {
-    class: `row row-button${overdue ? ' overdue' : ''}`, href: `#/expense/new?planned=${tx.id}`, 'data-debt': what,
+    class: `row row-button debt-row${overdue ? ' overdue' : ''}`, href: `#/expense/new?planned=${tx.id}`, 'data-debt': what,
   },
   el('div', { class: 'row-main' },
     el('p', { class: 'row-title' }, what),
     el('p', { class: 'row-sub' }, [object, supplier].filter(Boolean).join(', ')),
     account?.type === 'imprest' && el('p', { class: 'row-sub' }, `Передать: ${personName(account)}`),
-    el('p', { class: 'row-sub row-due', 'data-due-text': text }, text)),
+    el('p', { class: `pill${overdue ? ' pill-danger' : soon ? ' pill-warn' : ''}`, 'data-due-text': text }, text)),
   el('p', { class: 'row-amount' }, formatMoney(tx.amount_kgs, 'KGS'))));
 }
