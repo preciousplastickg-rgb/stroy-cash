@@ -53,7 +53,9 @@ export function renderBarter({ view, isCurrent }) {
         {
           key: 'buyer_id',
           label: 'Покупатель',
-          type: 'select',
+          type: 'counterparty',
+          counterpartyType: 'buyer',
+          createLabel: 'Новый покупатель',
           options: toOptions(refs.counterparties.filter((row) => row.type === 'buyer')),
         },
         { key: 'object_id', label: 'Объект', type: 'select', options: toOptions(refs.objects) },
@@ -140,7 +142,14 @@ export function renderBarterAsset({ view, params, isCurrent }) {
     const saved = await editSheet({
       title: 'Передать подрядчику',
       fields: [
-        { key: 'contractor_id', label: 'Подрядчик', type: 'select', options: toOptions(refs.counterparties.filter((row) => row.type === 'contractor')) },
+        {
+          key: 'contractor_id',
+          label: 'Подрядчик',
+          type: 'counterparty',
+          counterpartyType: 'contractor',
+          createLabel: 'Новый подрядчик',
+          options: toOptions(refs.counterparties.filter((row) => row.type === 'contractor')),
+        },
         { key: 'category_id', label: 'Статья работ', type: 'select', options: toOptions(refs.works) },
         {
           key: 'work_amount',

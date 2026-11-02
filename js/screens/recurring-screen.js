@@ -80,7 +80,16 @@ export function renderRecurring({ view, isCurrent }) {
       { key: 'account_id', label: 'Счёт', type: 'select', value: template?.account_id, options: select(refs.accounts) },
       { key: 'category_id', label: 'Статья', type: 'select', value: template?.category_id, options: select(refs.categories) },
       { key: 'object_id', label: 'Объект', type: 'select', value: template?.object_id ?? refs.overheadId, options: select(refs.objects) },
-      { key: 'counterparty_id', label: 'Контрагент', type: 'select', value: template?.counterparty_id, options: select(refs.counterparties), optional: true },
+      {
+        key: 'counterparty_id',
+        label: 'Контрагент',
+        type: 'counterparty',
+        counterpartyType: 'service',
+        createLabel: 'Новый контрагент',
+        value: template?.counterparty_id,
+        options: select(refs.counterparties),
+        optional: true,
+      },
       { key: 'start_date', label: 'С какого числа', type: 'date', value: template?.start_date ?? today },
       { key: 'end_date', label: 'До какого числа', type: 'date', value: template?.end_date, optional: true },
     ];

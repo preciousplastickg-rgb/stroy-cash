@@ -2,7 +2,7 @@ import { quickBackup } from '../backup.js';
 import { heldAssets, knownLocations, moveAsset } from '../barter.js';
 import { db, getSettings } from '../db.js';
 import {
-  allBalances, isCashTotalAccount, isMoneyAccount, latestTransactions, lenderBalances, openDebts, personName, sortAccounts,
+  allBalances, isCashTotalAccount, isMoneyAccount, latestTransactions, lenderBalances, openDebts, owedText, personName, sortAccounts,
 } from '../ledger.js';
 import {
   daysBetween, formatDate, formatDayMonth, formatMoney, formatRate, monthName, monthOf, toKgs, todayIso,
@@ -134,7 +134,7 @@ function lenderRow(entry, refs, today) {
     el('p', { class: 'row-title' }, name),
     el('p', { class: 'row-sub' }, entry.source_kind === 'founder' ? 'Личные деньги учредителя' : 'Взято в долг'),
     due && el('p', { class: 'row-sub row-due' }, due.text)),
-  el('p', { class: 'row-amount' }, formatMoney(entry.owed, 'KGS'))));
+  el('p', { class: 'row-amount' }, owedText(entry))));
 }
 
 // Every debt on its own row, nearest deadline first. A negative imprest balance is

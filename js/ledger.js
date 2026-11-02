@@ -2,7 +2,7 @@
 // Balances are never stored: they are always derived from posted transactions.
 import { db, getSettings, insertRow, updateRow } from './db.js';
 import {
-  RATE_ONE, amountInWords, computeAmountKgs, formatMoney, formatRate, monthOf, rateFromAmounts, todayIso,
+  RATE_ONE, amountInWords, computeAmountKgs, formatMoney, formatRate, monthOf, rateFromAmounts, toKgs, todayIso,
 } from './money.js';
 
 export const DOC_TYPES = [
@@ -526,7 +526,8 @@ export async function createTransfer(draft, { confirmed = [] } = {}) {
         date: draft.date,
         account_id: draft.account_id,
         amount: fee,
-        rate: draft.rate,
+        // An exchange has no typed rate: the fee in dollars takes the rate of the exchange.
+        rate: row.rate,
         object_id: objects.find((object) => object.is_overhead).id,
         category_id: feeCategory.id,
         description: `Комиссия за перевод №${row.number}`,
@@ -688,40 +689,60 @@ export function personName(account) {
   return account.name.replace(/^Подотчёт:\s*/, '');
 }
 
-// What the company owes to founders and lenders, per person. Amounts are in soms.
+// What the company owes to founders and lenders, per person. A debt is kept in the
+// currency the money came in: $1 000 lent is $1 000 to return, whatever the rate.
+// `by_currency` holds minor units per currency, `owed` is the total in soms with
+// dollars at the last rate, like the home total.
 export async function lenderBalances() {
-  const posted = await db.transactions.where('status').equals('posted').toArray();
+  const [posted, accounts, settings] = await Promise.all([
+    db.transactions.where('status').equals('posted').toArray(), db.accounts.toArray(), getSettings(),
+  ]);
+  const currencies = new Map(accounts.map((row) => [row.id, row.currency]));
   const lenders = new Map();
   for (const tx of posted) {
     const received = isOwedSource(tx.source_kind);
     if (!received && tx.source_kind !== 'repayment') continue;
     const entry = lenders.get(tx.counterparty_id) ?? {
-      counterparty_id: tx.counterparty_id, owed: 0, source_kind: tx.source_kind, due_date: null,
+      counterparty_id: tx.counterparty_id, by_currency: { KGS: 0, USD: 0 }, owed: 0, source_kind: tx.source_kind, due_date: null,
     };
-    entry.owed += (received ? 1 : -1) * (tx.reversal_kind ? -1 : 1) * tx.amount_kgs;
+    const currency = currencies.get(tx.account_id);
+    entry.by_currency[currency] += (received ? 1 : -1) * (tx.reversal_kind ? -1 : 1) * tx.amount;
     if (received) {
       entry.source_kind = tx.source_kind;
       if (tx.due_date) entry.due_date = tx.due_date;
     }
     lenders.set(tx.counterparty_id, entry);
   }
-  return [...lenders.values()].filter((entry) => entry.owed !== 0);
+  const rate = settings?.last_usd_rate ?? 0;
+  return [...lenders.values()]
+    .filter((entry) => entry.by_currency.KGS !== 0 || entry.by_currency.USD !== 0)
+    .map((entry) => ({ ...entry, owed: entry.by_currency.KGS + toKgs(entry.by_currency.USD, rate) }));
+}
+
+// "$1 000" or "87 000 сом и $1 000": a debt in the currencies it was taken in.
+export function owedText(entry) {
+  const parts = ['KGS', 'USD'].filter((currency) => entry.by_currency[currency] !== 0)
+    .map((currency) => formatMoney(entry.by_currency[currency], currency));
+  return parts.length > 0 ? parts.join(' и ') : formatMoney(0, 'KGS');
 }
 
 // Returning money is not a cost of any object: it has no object and stays out of
-// object reports, the cash flow shows it on its own line.
+// object reports, the cash flow shows it on its own line. It lowers the debt in the
+// currency of the account it is paid from.
 export async function createRepayment({ counterparty_id: counterpartyId, account_id: accountId, amount, rate, date, doc_type: docType }, { confirmed = [] } = {}) {
   return ledgerTransaction([], async () => {
     const category = await db.categories.where('code').equals('loan_repayment').first();
     const account = await db.accounts.get(accountId);
     const settings = await getSettings();
     const usedRate = account.currency === 'USD' ? rate ?? settings.last_usd_rate : undefined;
-    const inSoms = computeAmountKgs({ currency: account.currency, amount, rate: usedRate });
-    const owed = (await lenderBalances()).find((entry) => entry.counterparty_id === counterpartyId)?.owed ?? 0;
-    if (inSoms > owed) {
-      throw new LedgerError('invalid', [{
-        field: 'amount', code: 'over_owed', message: `Мы должны только ${formatMoney(owed, 'KGS')}`,
-      }]);
+    const entry = (await lenderBalances()).find((row) => row.counterparty_id === counterpartyId);
+    const owed = entry?.by_currency[account.currency] ?? 0;
+    if (amount > owed) {
+      const other = account.currency === 'USD' ? 'KGS' : 'USD';
+      const message = owed <= 0 && entry?.by_currency[other] > 0
+        ? `Долг в ${other === 'USD' ? 'долларах' : 'сомах'}: ${formatMoney(entry.by_currency[other], other)}. Верните со счёта в этой валюте.`
+        : `Мы должны только ${formatMoney(owed, account.currency)}`;
+      throw new LedgerError('invalid', [{ field: 'amount', code: 'over_owed', message }]);
     }
     return post({
       type: 'expense',
@@ -757,6 +778,20 @@ export async function createCounterparty({ name, type = 'other', phone = '', inn
   }));
 }
 
+// A name typed into a picker: the same name already on record is reused, whatever
+// its type, so the directory gets no twins.
+export async function ensureCounterparty(name, type = 'other') {
+  const trimmed = name?.trim();
+  if (!trimmed) throw new LedgerError('invalid', [{ field: 'name', code: 'required', message: 'Укажите название' }]);
+  return db.transaction('rw', db.counterparties, db.audit_log, async () => {
+    const key = normalizeName(trimmed);
+    const found = (await db.counterparties.toArray()).find((row) => normalizeName(row.name) === key);
+    return found ?? insertRow('counterparties', {
+      name: tidyName(trimmed), type, phone: '', inn: '', note: '', is_archived: false,
+    });
+  });
+}
+
 const REF_TABLES = ['accounts', 'objects', 'categories', 'counterparties'];
 
 // Directory records. They are archived, never deleted: operations refer to them.
@@ -768,7 +803,8 @@ export async function saveRef(table, id, fields) {
     if (!id) return insertRow(table, { is_archived: false, ...values });
     if (table === 'accounts') {
       const old = await db.accounts.get(id);
-      const used = await db.transactions.where('account_id').equals(id).count();
+      const used = await db.transactions.where('account_id').equals(id).count()
+        + await db.transactions.where('to_account_id').equals(id).count();
       if (used > 0 && values.currency && values.currency !== old.currency) {
         throw new LedgerError('invalid', [{ field: 'currency', code: 'currency_locked', message: 'Валюту счёта с операциями менять нельзя' }]);
       }

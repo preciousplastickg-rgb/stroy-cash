@@ -57,7 +57,9 @@ const SHAPES = {
       {
         key: 'customer_id',
         label: 'Заказчик',
-        type: 'select',
+        type: 'counterparty',
+        counterpartyType: 'customer',
+        createLabel: 'Новый заказчик',
         value: row?.customer_id,
         optional: true,
         options: extra.counterparties.filter((item) => item.type === 'customer').map((item) => ({ value: item.id, label: item.name })),

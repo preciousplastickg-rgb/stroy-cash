@@ -593,6 +593,10 @@ li + li > .stale { border-top: 0; }
 .edit-field .chips-label { padding-bottom: 4px; }
 .edit-field .input { margin-top: 0; }
 select.input { appearance: none; -webkit-appearance: none; }
+.input-pick { display: flex; align-items: center; gap: 8px; text-align: left; color: var(--ink); }
+.input-pick .pick-value { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.input-pick .pick-placeholder { color: var(--ink-3, var(--ink-2)); }
+.input-pick .pick-new { margin-left: auto; flex: none; font-size: 13px; color: var(--accent); }
 
 .page-head + .input { flex: none; }
 .filter-chips { display: flex; gap: 6px; overflow-x: auto; margin: 0 -16px; padding: 0 16px; scrollbar-width: none; flex: none; }

@@ -3,7 +3,7 @@
 // counted there, so it is a transfer, not new money (SPEC §5.4).
 import { db, getSettings } from '../db.js';
 import {
-  INCOME_SOURCES, accountBalance, allBalances, createCounterparty, createIncome, createTransfer, isMoneyAccount, isOwedSource,
+  INCOME_SOURCES, accountBalance, allBalances, createIncome, createTransfer, ensureCounterparty, isMoneyAccount, isOwedSource,
   shortName, sortAccounts, updateTransaction,
 } from '../ledger.js';
 import { amountToTyping, formatMoney, formatRate, parseAmount, parseRate, todayIso } from '../money.js';
@@ -160,20 +160,23 @@ export function renderIncome({ view, params, isCurrent }) {
   }
 
   async function pickCounterparty() {
+    const { type } = INCOME_SOURCES.find((item) => item.code === state.source_kind);
+    // Money for an apartment comes from its buyer, not from a customer of the object.
+    const category = refs.categories.find((row) => row.id === state.category_id)?.name ?? state.category_text;
+    const newType = type === 'customer' && /квартир/i.test(category) ? 'buyer' : type;
     const picked = await openPicker({
       title: 'От кого',
       items: refs.counterparties,
       selectedId: state.counterparty_id,
       searchPlaceholder: 'Имя или название',
       canCreate: true,
-      createLabel: 'Новый контрагент',
+      createLabel: { buyer: 'Новый покупатель', customer: 'Новый заказчик' }[newType] ?? 'Новый контрагент',
       autofocus: true,
     });
     if (!picked) return;
     if (picked.create) {
-      const { type } = INCOME_SOURCES.find((item) => item.code === state.source_kind);
-      const row = await createCounterparty({ name: picked.create, type });
-      refs.counterparties.push({ id: row.id, label: row.name });
+      const row = await ensureCounterparty(picked.create, newType);
+      if (!refs.counterparties.some((item) => item.id === row.id)) refs.counterparties.push({ id: row.id, label: row.name });
       state.counterparty_id = row.id;
     } else {
       state.counterparty_id = picked;

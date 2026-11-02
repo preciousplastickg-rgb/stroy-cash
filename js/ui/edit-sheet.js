@@ -1,12 +1,62 @@
 // A short form in a bottom sheet, for directories and barter steps. Fields:
-// { key, label, type: 'text'|'number'|'amount'|'rate'|'date'|'select', value, options, optional, hint }.
+// { key, label, type: 'text'|'number'|'amount'|'rate'|'date'|'select'|'counterparty', value, options, optional, hint }.
+// A 'counterparty' field picks from `options` with search, and a typed name that is
+// not there becomes a new counterparty of `counterpartyType` when the sheet is saved.
+import { ensureCounterparty } from '../ledger.js';
 import { amountToTyping, formatRate, formatTyping, parseAmount, parseRate } from '../money.js';
 import { confirmSheet } from './confirm.js';
 import { el } from './dom.js';
 import { firstIssue, withConfirmations } from './form.js';
+import { openPicker } from './picker.js';
 import { openSheet } from './sheet.js';
 
+const NONE = 'none';
+
+function counterpartyControl(field) {
+  const picked = { id: field.value ?? null, create: null };
+  const button = el('button', {
+    class: 'input input-pick', type: 'button', 'data-key': field.key, 'aria-label': field.label, onClick: choose,
+  });
+
+  function show() {
+    const label = picked.create ?? field.options.find((option) => option.value === picked.id)?.label;
+    button.replaceChildren(...[
+      el('span', { class: label ? 'pick-value' : 'pick-placeholder' }, label ?? 'Выбрать или добавить'),
+      picked.create && el('span', { class: 'pick-new' }, 'новый'),
+    ].filter(Boolean));
+  }
+
+  async function choose() {
+    const result = await openPicker({
+      title: field.label,
+      items: [
+        ...(field.optional && (picked.id || picked.create) ? [{ id: NONE, label: 'Не указано' }] : []),
+        ...field.options.map((option) => ({ id: option.value, label: option.label })),
+      ],
+      selectedId: picked.id,
+      searchPlaceholder: 'Имя или название',
+      canCreate: true,
+      createLabel: field.createLabel ?? 'Добавить',
+      autofocus: true,
+    });
+    if (!result) return;
+    picked.id = result.create || result === NONE ? null : result;
+    picked.create = result.create ?? null;
+    show();
+  }
+
+  show();
+  // Read by readValue; the name is turned into a record only on save.
+  button.pickedValue = () => picked.id ?? (picked.create ? { create: picked.create } : null);
+  button.settle = (id) => {
+    picked.id = id;
+    picked.create = null;
+  };
+  return button;
+}
+
 function control(field) {
+  if (field.type === 'counterparty') return counterpartyControl(field);
   if (field.type === 'select') {
     return el('select', { class: 'input', 'data-key': field.key, 'aria-label': field.label },
       field.optional && el('option', { value: '' }, 'Не указано'),
@@ -35,6 +85,7 @@ function control(field) {
 }
 
 function readValue(field, node) {
+  if (field.type === 'counterparty') return node.pickedValue();
   const raw = node.value;
   if (field.type === 'amount') return parseAmount(raw);
   if (field.type === 'rate') return parseRate(raw);
@@ -57,6 +108,12 @@ export function editSheet({ title, fields, saveLabel = 'Сохранить', onS
         return;
       }
       try {
+        // New names become records right before saving; a retry reuses them.
+        for (const field of fields.filter((item) => item.type === 'counterparty' && values[item.key]?.create)) {
+          const row = await ensureCounterparty(values[field.key].create, field.counterpartyType);
+          controls.get(field.key).settle(row.id);
+          values[field.key] = row.id;
+        }
         const result = await withConfirmations((options) => onSave(values, options));
         if (result !== null) sheet.close(true);
       } catch (failure) {
