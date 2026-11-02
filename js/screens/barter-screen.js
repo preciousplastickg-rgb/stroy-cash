@@ -8,6 +8,7 @@ import { formatDate, formatMoney, todayIso } from '../money.js';
 import { el } from '../ui/dom.js';
 import { editSheet } from '../ui/edit-sheet.js';
 import { formHead } from '../ui/form.js';
+import { photoThumbs } from '../ui/photo-viewer.js';
 import { operationRow } from '../ui/operation-row.js';
 import { compressPhoto } from '../ui/photo.js';
 import { openPicker } from '../ui/picker.js';
@@ -195,7 +196,7 @@ export function renderBarterAsset({ view, params, isCurrent }) {
     ]);
     if (!isCurrent()) return;
     if (!asset) {
-      location.hash = '#/barter';
+      navigate('/barter', { replace: true });
       return;
     }
     const byId = (rows) => new Map(rows.map((row) => [row.id, row]));
@@ -203,11 +204,11 @@ export function renderBarterAsset({ view, params, isCurrent }) {
     const names = byId(counterparties);
     const fact = (label, value) => (value ? [el('dt', {}, label), el('dd', {}, value)] : []);
     for (const url of urls.splice(0)) URL.revokeObjectURL(url);
-    const images = photos.filter((photo) => photo.blob).map((photo) => {
+    const images = photoThumbs(photos.filter((photo) => photo.blob).map((photo) => {
       const url = URL.createObjectURL(photo.blob);
       urls.push(url);
-      return el('a', { href: url, target: '_blank', rel: 'noopener', class: 'photo-link' }, el('img', { src: url, alt: 'Документ машины' }));
-    });
+      return url;
+    }), 'Документ машины');
     const button = (label, action, onClick, primary = false) => el('button', {
       class: `button${primary ? ' button-primary' : ''}`, type: 'button', 'data-action': action, onClick,
     }, label);

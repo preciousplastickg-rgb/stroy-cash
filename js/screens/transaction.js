@@ -1,5 +1,6 @@
 // Operation card: all fields, photos, change history, edit and reversal (SPEC §5.7).
 import { db } from '../db.js';
+import { navigate } from '../nav.js';
 import {
   DOC_TYPES, INCOME_SOURCES, LedgerError, isMonthClosed, reverseTransaction, reverseWithOpposite, shortName,
 } from '../ledger.js';
@@ -7,6 +8,7 @@ import { formatDate, formatMoney, formatRate } from '../money.js';
 import { el } from '../ui/dom.js';
 import { askReason } from '../ui/edit-sheet.js';
 import { formHead } from '../ui/form.js';
+import { photoThumbs } from '../ui/photo-viewer.js';
 import { toast } from '../ui/toast.js';
 
 const TYPE_TITLES = { expense: 'Расход', income: 'Поступление', transfer: 'Перевод' };
@@ -64,7 +66,7 @@ export function renderTransaction({ view, params, isCurrent }) {
     ]);
     if (!isCurrent()) return;
     if (!tx) {
-      location.hash = '#/journal';
+      navigate('/journal', { replace: true });
       return;
     }
     const byId = (rows) => new Map(rows.map((row) => [row.id, row]));
@@ -113,11 +115,11 @@ export function renderTransaction({ view, params, isCurrent }) {
     }
 
     for (const url of urls.splice(0)) URL.revokeObjectURL(url);
-    const images = photos.filter((photo) => photo.blob).map((photo) => {
+    const images = photoThumbs(photos.filter((photo) => photo.blob).map((photo) => {
       const url = URL.createObjectURL(photo.blob);
       urls.push(url);
-      return el('a', { href: url, target: '_blank', rel: 'noopener', class: 'photo-link' }, el('img', { src: url, alt: 'Фото документа' }));
-    });
+      return url;
+    }), 'Фото документа');
 
     view.replaceChildren(...[
       formHead(`${TYPE_TITLES[tx.type]} №${tx.number}`, { href: '#/journal' }),

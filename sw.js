@@ -1,6 +1,6 @@
 // Cache-first service worker. The cache name follows the app version: bump VERSION
 // together with js/version.js on every release, tests/pwa.test.js checks both.
-const VERSION = '1.0.4';
+const VERSION = '1.1.0';
 const CACHE = `stroy-cash-${VERSION}`;
 
 const PRECACHE = [
@@ -19,6 +19,7 @@ const PRECACHE = [
   'js/db.js',
   'js/ledger.js',
   'js/money.js',
+  'js/nav.js',
   'js/recurring.js',
   'js/reports.js',
   'js/security.js',
@@ -51,11 +52,14 @@ const PRECACHE = [
   'js/ui/edit-sheet.js',
   'js/ui/form.js',
   'js/ui/operation-row.js',
+  'js/ui/photo-viewer.js',
   'js/ui/photo.js',
   'js/ui/picker.js',
   'js/ui/share.js',
   'js/ui/sheet.js',
+  'js/ui/swipe.js',
   'js/ui/toast.js',
+  'js/ui/transition.js',
   'vendor/dexie.mjs',
   'vendor/jszip.min.js',
   'vendor/xlsx.full.min.js',

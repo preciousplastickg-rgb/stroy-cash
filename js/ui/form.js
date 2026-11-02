@@ -1,5 +1,6 @@
 // Parts shared by the operation forms.
 import { LedgerError } from '../ledger.js';
+import { setLeaveGuard } from '../nav.js';
 import { formatDate } from '../money.js';
 import { attachAmountInput } from './amount-input.js';
 import { confirmSheet } from './confirm.js';
@@ -42,14 +43,29 @@ export function amountBox({ id, label = 'Сумма', currency = 'KGS', onChange
   };
 }
 
-export function formHead(title, { href = '#/', right = null } = {}) {
+const BACK_ICON = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7"/></svg>';
+
+// The button returns to the screen that opened this one; href is where it leads
+// when nothing is under it (the app was opened right on this screen).
+// A form closes with ✕, a page goes back with an arrow.
+export function backButton(href = '#/', { modal = false } = {}) {
+  const button = el('a', {
+    class: `icon-button${modal ? '' : ' back-button'}`, href, 'data-back': true, 'aria-label': modal ? 'Закрыть' : 'Назад',
+  });
+  if (modal) button.textContent = '✕';
+  else button.innerHTML = BACK_ICON;
+  return button;
+}
+
+export function formHead(title, { href = '#/', right = null, modal = false } = {}) {
   return el('header', { class: 'form-head' },
-    el('a', { class: 'icon-button', href, 'aria-label': 'Закрыть' }, '✕'),
+    backButton(href, { modal }),
     el('h1', {}, title),
     right ?? el('span', {}));
 }
 
 export function savedScreen(view, { label, number, hint, facts = [], actions }) {
+  setLeaveGuard(null);
   view.replaceChildren(el('div', { class: 'saved' },
     el('p', { class: 'saved-label' }, label),
     number != null && el('p', { class: 'saved-number', 'data-testid': 'saved-number' }, `№${number}`),
@@ -58,8 +74,9 @@ export function savedScreen(view, { label, number, hint, facts = [], actions }) 
     el('div', { class: 'saved-actions' }, actions)));
 }
 
+// The form's entry is left behind: back from the next screen does not reopen it.
 export function doneLink(href = '#/') {
-  return el('a', { class: 'button button-primary', href }, 'Готово');
+  return el('a', { class: 'button button-primary', href, 'data-back': true }, 'Готово');
 }
 
 // Runs a ledger write; warnings are asked one by one and the write is repeated.

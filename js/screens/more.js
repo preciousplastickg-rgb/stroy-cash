@@ -1,5 +1,6 @@
 import { currentMonth, photoBackup, quickBackup } from '../backup.js';
 import { getSettings } from '../db.js';
+import { switchTab } from '../nav.js';
 import { setLastUsdRate, updateSettings } from '../ledger.js';
 import { todayIso } from '../money.js';
 import { generateInstances } from '../recurring.js';
@@ -39,7 +40,7 @@ async function leaveDemo() {
   });
   if (!confirmed) return;
   await startClean();
-  location.hash = '#/';
+  switchTab('/');
 }
 
 async function backupNow() {
@@ -72,7 +73,7 @@ function menu(title, rows) {
 }
 
 function link(label, href) {
-  return el('li', {}, el('a', { class: 'row row-compact row-button', href, 'data-menu': label }, el('p', { class: 'row-title' }, label)));
+  return el('li', {}, el('a', { class: 'row row-compact row-button chevron', href, 'data-menu': label }, el('p', { class: 'row-title' }, label)));
 }
 
 function action(label, onClick, danger = false) {

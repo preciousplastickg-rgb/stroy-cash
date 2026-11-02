@@ -8,6 +8,7 @@ import { formatDate, formatMoney, todayIso } from '../money.js';
 import { confirmSheet } from '../ui/confirm.js';
 import { el } from '../ui/dom.js';
 import { formHead } from '../ui/form.js';
+import { switchTab } from '../nav.js';
 import { deliverFile } from '../ui/share.js';
 import { toast } from '../ui/toast.js';
 
@@ -41,7 +42,7 @@ export function renderRestore({ view }) {
     let restored = 0;
     for (const file of photos) restored += await restorePhotos(file);
     toast(`Данные восстановлены${restored ? `, фото: ${restored}` : ''}`);
-    location.hash = '#/';
+    switchTab('/');
   }
 
   function showSummary() {

@@ -1,5 +1,6 @@
 // Journal: everything that happened, with filters, search and a total (SPEC §5.6).
 import { db } from '../db.js';
+import { replaceParams } from '../nav.js';
 import { openDebts, shortName, sortAccounts } from '../ledger.js';
 import { formatDate, formatMoney, monthOf, todayIso } from '../money.js';
 import { monthTitle } from '../reports.js';
@@ -31,11 +32,11 @@ export function renderJournal({ view, params, isCurrent }) {
     month: params?.get('month') ?? monthOf(todayIso()),
     account_id: params?.get('account') ?? null,
     object_id: params?.get('object') ?? null,
-    category_id: null,
-    counterparty_id: null,
+    category_id: params?.get('category') ?? null,
+    counterparty_id: params?.get('counterparty') ?? null,
     type: params?.get('type') ?? null,
-    no_document: false,
-    query: '',
+    no_document: params?.get('nodoc') === '1',
+    query: (params?.get('q') ?? '').trim().toLowerCase(),
   };
   const today = todayIso();
   let shown = PAGE;
@@ -51,12 +52,25 @@ export function renderJournal({ view, params, isCurrent }) {
     placeholder: 'Поиск по описанию или номеру',
     autocomplete: 'off',
     'aria-label': 'Поиск',
+    value: params?.get('q') ?? '',
     onInput: () => {
       filters.query = search.value.trim().toLowerCase();
       shown = PAGE;
       render();
     },
   });
+
+  // Filters live in the address: back from an operation shows the same list.
+  function rememberFilters() {
+    const query = new URLSearchParams();
+    query.set('month', filters.month ?? '');
+    for (const [key, value] of [['type', filters.type], ['account', filters.account_id], ['object', filters.object_id],
+      ['category', filters.category_id], ['counterparty', filters.counterparty_id], ['q', search.value.trim()]]) {
+      if (value) query.set(key, value);
+    }
+    if (filters.no_document) query.set('nodoc', '1');
+    replaceParams('/journal', query);
+  }
 
   function selected() {
     const posted = data.operations.filter((tx) => {
@@ -163,6 +177,7 @@ export function renderJournal({ view, params, isCurrent }) {
 
   function render() {
     if (!data) return; // typing before the load: the first render picks up the query
+    rememberFilters();
     renderChips();
     const rows = filters.type === 'planned' ? [] : selected();
     const planned = plannedSection();

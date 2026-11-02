@@ -48,6 +48,7 @@ ul { list-style: none; padding: 0; }
   flex-direction: column;
   gap: 12px;
   outline: none;
+  overscroll-behavior: contain;
 }
 
 .focused #nav, .focused #actions { display: none; }
@@ -501,7 +502,8 @@ li + li > .stale { border-top: 0; }
   color: inherit;
 }
 
-.sheet::backdrop { background: rgb(0 0 0 / .4); }
+.sheet::backdrop { background: rgb(0 0 0 / var(--backdrop, .4)); transition: background .2s; animation: backdrop-in .2s ease-out; }
+@keyframes backdrop-in { from { background: rgb(0 0 0 / 0); } }
 
 .sheet-panel {
   display: flex;
@@ -510,11 +512,14 @@ li + li > .stale { border-top: 0; }
   background: var(--bg);
   border-radius: 18px 18px 0 0;
   padding: 6px 16px calc(env(safe-area-inset-bottom) + 12px);
-  animation: sheet-in .18s ease-out;
+  animation: sheet-in .26s cubic-bezier(.2, .8, .2, 1);
 }
 
-@keyframes sheet-in { from { transform: translateY(32px); opacity: 0; } }
-@media (prefers-reduced-motion: reduce) { .sheet-panel { animation: none; } }
+@keyframes sheet-in { from { transform: translateY(100%); } }
+@media (prefers-reduced-motion: reduce) { .sheet-panel, .sheet::backdrop { animation: none; } }
+
+/* The handle says the sheet can be pulled down. */
+.sheet-grabber { width: 36px; height: 5px; border-radius: 3px; background: #cfccc4; margin: 0 auto 2px; flex: none; }
 
 /* Typed pickers keep their size, so results stay in place under the search field. */
 .sheet.tall { height: 88dvh; }
@@ -698,3 +703,79 @@ select.input { appearance: none; -webkit-appearance: none; }
   text-align: center;
   z-index: 10;
 }
+
+/* Screen transitions: the old screen leaves from a ghost layer (js/ui/transition.js). */
+.screen-ghost { position: fixed; z-index: 5; overflow: hidden; background: var(--bg); pointer-events: none; will-change: transform; }
+.screen-ghost.on-top { z-index: 7; box-shadow: -10px 0 28px rgb(0 0 0 / .1); }
+.screen-ghost-inner { display: flex; flex-direction: column; }
+.screen-ghost.underlay.committed { z-index: 6; }
+.screen-entering { position: relative; z-index: 6; background: var(--bg); will-change: transform; }
+.screen-entering:not(:has(.saved, .welcome)) { box-shadow: -10px 0 28px rgb(0 0 0 / .1); }
+#view.swiping { position: relative; z-index: 6; background: var(--bg); box-shadow: -10px 0 28px rgb(0 0 0 / .12); }
+
+/* Back arrow of inner pages; forms keep the ✕. */
+.back-button { margin-left: -6px; color: var(--accent); }
+.back-button svg { width: 26px; height: 26px; fill: none; stroke: currentColor; stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; }
+
+/* A row that opens another screen. */
+.row-button.chevron::after {
+  content: "";
+  flex: none;
+  width: 8px;
+  height: 8px;
+  margin-right: 4px;
+  border-top: 2px solid #b5b2aa;
+  border-right: 2px solid #b5b2aa;
+  transform: rotate(45deg);
+}
+
+/* Touch feedback: the pressed row lights up to the card's edges, buttons sink a little. */
+/* clip-path, not overflow: a flex item with overflow could shrink and cut its rows. */
+.card { clip-path: inset(0 round var(--radius)); }
+a.row-button:active, button.row-button:active { background: var(--accent-soft); box-shadow: -14px 0 0 var(--accent-soft), 14px 0 0 var(--accent-soft); }
+.stale.row-button:active { box-shadow: none; }
+.button, .chip, .mini-button, .segment, .photo-button, .pin-key, .banner-action, .card-action, .icon-button { transition: transform .08s, opacity .08s; }
+.button:active:not(:disabled), .mini-button:active, .chip:active, .photo-button:active { transform: scale(.97); }
+.icon-button:active, .card-action:active, .banner-action:active, .field-more:active { opacity: .5; }
+.picker-row:active { background: var(--accent-soft); }
+.pin-key:active { background: var(--accent-soft); }
+#nav a:active svg { transform: scale(.9); }
+#nav svg { transition: transform .08s; }
+.what-search:active, .select-row:active { background: var(--accent-soft); }
+
+.photo-link { padding: 0; border-radius: 10px; overflow: hidden; }
+
+/* Photo viewer */
+.viewer {
+  width: 100%;
+  height: 100%;
+  max-width: none;
+  max-height: none;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: rgb(0 0 0 / var(--viewer-dim, 1));
+  color: #fff;
+  overflow: hidden;
+  touch-action: pinch-zoom;
+}
+
+.viewer::backdrop { background: #000; opacity: 0; }
+.viewer[open] { display: flex; align-items: center; justify-content: center; animation: viewer-in .2s ease-out; }
+@keyframes viewer-in { from { opacity: 0; } }
+.viewer-image { max-width: 100%; max-height: 100%; object-fit: contain; user-select: none; -webkit-user-select: none; }
+
+.viewer-bar {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: calc(env(safe-area-inset-top) + 4px) 8px 4px 16px;
+  background: linear-gradient(rgb(0 0 0 / .5), transparent);
+}
+
+.viewer-counter { font-size: 15px; font-weight: 600; }
+.viewer-close { color: #fff; font-size: 20px; }

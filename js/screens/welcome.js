@@ -1,13 +1,13 @@
 // First start: real work, a look at the demo, or a backup from another phone.
+import { navigate } from '../nav.js';
 import { generateInstances } from '../recurring.js';
 import { todayIso } from '../money.js';
 import { seedDemo, startClean } from '../seed.js';
 import { el } from '../ui/dom.js';
 
 export function renderWelcome({ view }) {
-  const go = (path) => {
-    location.hash = path;
-  };
+  // The welcome screen does not stay under the app: back from home leaves it.
+  const go = (path) => navigate(path, { replace: true });
   view.replaceChildren(el('div', { class: 'welcome' },
     el('h1', {}, 'Учёт денег стройки'),
     el('p', {}, 'Все данные хранятся только на этом телефоне. Интернет нужен для установки и обновлений.'),
@@ -17,7 +17,7 @@ export function renderWelcome({ view }) {
       'data-action': 'start-clean',
       onClick: async () => {
         await startClean();
-        go('#/');
+        go('/');
       },
     }, 'Начать работу'),
     el('button', {
@@ -27,7 +27,7 @@ export function renderWelcome({ view }) {
       onClick: async () => {
         await seedDemo();
         await generateInstances(todayIso());
-        go('#/');
+        go('/');
       },
     }, 'Посмотреть на демо-данных'),
     el('a', { class: 'button', href: '#/restore', 'data-action': 'start-restore' }, 'Восстановить из бэкапа')));

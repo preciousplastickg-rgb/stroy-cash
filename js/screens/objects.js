@@ -1,6 +1,7 @@
 // Objects: what each one cost, for the month and in total. Costs include debts and
 // cars given to contractors, income is what the customer paid (SPEC §5.8).
 import { db } from '../db.js';
+import { navigate } from '../nav.js';
 import { formatMoney, monthOf, todayIso } from '../money.js';
 import { monthTitle, objectsReport } from '../reports.js';
 import { debtRow } from '../ui/debt-row.js';
@@ -42,7 +43,7 @@ export function renderObject({ view, params, isCurrent }) {
       if (!isCurrent()) return;
       const entry = entries.find((row) => row.object.id === id);
       if (!entry) {
-        location.hash = '#/objects';
+        navigate('/objects', { replace: true });
         return;
       }
       const byId = (rows) => new Map(rows.map((row) => [row.id, row]));

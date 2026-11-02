@@ -20,7 +20,7 @@ export function renderReports({ view }) {
   view.replaceChildren(
     el('header', { class: 'page-head' }, el('h1', {}, 'Отчёты')),
     el('section', { class: 'card' }, el('ul', { class: 'rows' }, REPORTS.map(([key, title]) => el('li', {},
-      el('a', { class: 'row row-compact row-button', href: `#/report?name=${key}`, 'data-report': key },
+      el('a', { class: 'row row-compact row-button chevron', href: `#/report?name=${key}`, 'data-report': key },
         el('p', { class: 'row-title' }, title)))))),
   );
 }

@@ -7,7 +7,9 @@ import {
 import { formatMoney, parseAmount, todayIso } from '../money.js';
 import { attachAmountInput } from '../ui/amount-input.js';
 import { confirmSheet } from '../ui/confirm.js';
+import { setLeaveGuard } from '../nav.js';
 import { el } from '../ui/dom.js';
+import { backButton } from '../ui/form.js';
 import { openPicker } from '../ui/picker.js';
 import { toast } from '../ui/toast.js';
 
@@ -134,6 +136,9 @@ export function renderIssue({ view, params, isCurrent }) {
     const current = person();
     const balance = await accountBalance(current.id);
     if (!isCurrent()) return;
+    setLeaveGuard(null);
+    // Opened from this person's page: back to it; otherwise the page takes the form's place.
+    const fromPerson = params?.get('person') === current.id;
     view.replaceChildren(el('div', { class: 'saved' },
       el('p', { class: 'saved-label' }, 'Выдано. Номер операции'),
       el('p', { class: 'saved-number', 'data-testid': 'saved-number' }, `№${saved.number}`),
@@ -141,12 +146,14 @@ export function renderIssue({ view, params, isCurrent }) {
         el('dt', {}, 'Сумма'), el('dd', {}, formatMoney(saved.amount, current.currency)),
         el('dt', {}, `На руках, ${personName(current)}`), el('dd', {}, formatMoney(balance, current.currency))),
       el('div', { class: 'saved-actions' },
-        el('a', { class: 'button button-primary', href: `#/person?id=${current.id}` }, 'Готово'))));
+        el('a', {
+          class: 'button button-primary', href: `#/person?id=${current.id}`, 'data-back': fromPerson, 'data-replace': !fromPerson,
+        }, 'Готово'))));
   }
 
   view.replaceChildren(
     el('header', { class: 'form-head' },
-      el('a', { class: 'icon-button', href: '#/', 'aria-label': 'Закрыть' }, '✕'),
+      backButton('#/', { modal: true }),
       el('h1', {}, 'Выдать деньги'),
       el('span', {})),
     el('div', { class: 'amount-box' }, amountInput, el('span', { class: 'amount-currency' }, 'сом')),
@@ -155,6 +162,7 @@ export function renderIssue({ view, params, isCurrent }) {
     el('div', { class: 'save-bar' }, saveButton),
   );
   amountInput.focus();
+  setLeaveGuard(() => Boolean(amountInput.value || comment.value.trim()));
 
   async function load() {
     const [accounts, balances] = await Promise.all([db.accounts.toArray(), allBalances()]);

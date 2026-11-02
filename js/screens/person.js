@@ -5,6 +5,7 @@ import { accountBalance, openDebts, personName, shortName } from '../ledger.js';
 import { formatDate, formatMoney, todayIso } from '../money.js';
 import { debtRow } from '../ui/debt-row.js';
 import { el } from '../ui/dom.js';
+import { formHead } from '../ui/form.js';
 
 function historyRow(tx, person, refs) {
   if (tx.type === 'transfer') {
@@ -59,10 +60,7 @@ export function renderPerson({ view, params, isCurrent }) {
     const { label, value } = balanceLine(balance, person.currency);
     const owed = debts.reduce((sum, tx) => sum + tx.amount, 0);
     view.replaceChildren(...[
-      el('header', { class: 'form-head' },
-        el('a', { class: 'icon-button', href: '#/', 'aria-label': 'Назад' }, '✕'),
-        el('h1', {}, personName(person)),
-        el('span', {})),
+      formHead(personName(person)),
       el('section', { class: 'total' },
         el('p', { class: 'total-label' }, label),
         el('p', { class: 'total-value', 'data-testid': 'person-balance' }, value)),

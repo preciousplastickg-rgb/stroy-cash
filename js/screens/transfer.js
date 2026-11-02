@@ -8,6 +8,7 @@ import {
   amountToTyping, formatMoney, formatRate, parseAmount, rateFromAmounts, todayIso,
 } from '../money.js';
 import { attachAmountInput } from '../ui/amount-input.js';
+import { setLeaveGuard } from '../nav.js';
 import { el } from '../ui/dom.js';
 import { amountBox, dateRow, doneLink, firstIssue, formHead, formRow, savedScreen, withConfirmations } from '../ui/form.js';
 import { openPicker } from '../ui/picker.js';
@@ -116,8 +117,10 @@ export function renderTransfer({ view, params, isCurrent }) {
     }
   }
 
-  view.replaceChildren(formHead(editingId ? 'Изменить перевод' : 'Перевод'), amount.box, error, form, el('div', { class: 'save-bar' }, saveButton));
+  const head = formHead(editingId ? 'Изменить перевод' : 'Перевод', { modal: true, href: editingId ? `#/tx?id=${editingId}` : '#/' });
+  view.replaceChildren(head, amount.box, error, form, el('div', { class: 'save-bar' }, saveButton));
   if (!editingId) amount.input.focus();
+  setLeaveGuard(() => !editingId && Boolean(amount.input.value || toAmountInput.value || feeInput.value || comment.value.trim()));
 
   async function load() {
     const [accounts, balances, settings, editing] = await Promise.all([

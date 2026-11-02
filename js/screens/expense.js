@@ -2,6 +2,7 @@
 // most of the work: picking what was bought from the recent list fills the object
 // and the supplier. Everything else is a short row that opens only when needed.
 import { db, getSettings } from '../db.js';
+import { goBack, replaceParams, setLeaveGuard } from '../nav.js';
 import {
   DOC_TYPES, LedgerError, MAX_PHOTOS, accountBalance, allBalances, cancelPlannedExpense, checkTransaction,
   COUNTERPARTY_GROUPS, counterpartyDefaults, createDebt, createExpense, createPerson, createPlannedExpense,
@@ -14,7 +15,7 @@ import {
 import { attachAmountInput } from '../ui/amount-input.js';
 import { confirmSheet } from '../ui/confirm.js';
 import { el } from '../ui/dom.js';
-import { dateRow } from '../ui/form.js';
+import { backButton, dateRow } from '../ui/form.js';
 import { compressPhoto } from '../ui/photo.js';
 import { openPicker } from '../ui/picker.js';
 import { toast } from '../ui/toast.js';
@@ -681,7 +682,7 @@ export function renderExpense({ view, isCurrent, params }) {
     try {
       await updatePlannedExpense(payingId, values, { confirmed: ['large_amount', 'rate_jump'], photos: state.photos.map((photo) => photo.blob) });
       toast('Изменения сохранены');
-      location.hash = '#/';
+      goBack('/');
     } catch (error) {
       if (!(error instanceof LedgerError)) throw error;
       showIssues(error.issues);
@@ -689,6 +690,7 @@ export function renderExpense({ view, isCurrent, params }) {
   }
 
   function finish(...content) {
+    setLeaveGuard(null);
     for (const photo of state.photos) URL.revokeObjectURL(photo.url);
     view.replaceChildren(el('div', { class: 'saved' }, ...content, savedActions()));
   }
@@ -734,12 +736,12 @@ export function renderExpense({ view, isCurrent, params }) {
 
   function savedActions() {
     return el('div', { class: 'saved-actions' },
-      el('a', { class: 'button button-primary', href: '#/' }, 'Готово'),
+      el('a', { class: 'button button-primary', href: editingId ? `#/tx?id=${editingId}` : '#/', 'data-back': true }, 'Готово'),
       el('button', {
         class: 'button',
         type: 'button',
         onClick: () => {
-          history.replaceState(null, '', '#/expense/new');
+          replaceParams('/expense/new', new URLSearchParams());
           renderExpense({ view, isCurrent });
         },
       }, 'Ещё расход'));
@@ -752,26 +754,20 @@ export function renderExpense({ view, isCurrent, params }) {
     if (!cancelled) return;
     await cancelPlannedExpense(payingId);
     toast('Отменено');
-    location.hash = '#/';
+    goBack('/');
   }
 
   function isDirty() {
     return Boolean(amountInput.value || state.object_id || state.doc_type || state.photos.length || categoryName() || counterpartyName());
   }
 
-  async function closeForm(event) {
-    if (payingId || editingId || !isDirty()) return;
-    event.preventDefault();
-    const leave = await confirmSheet({
-      title: 'Выйти без сохранения?', message: 'Введённые данные не сохранятся.', confirmLabel: 'Выйти', cancelLabel: 'Остаться', danger: true,
-    });
-    if (leave) location.hash = '#/';
-  }
+  // Leaving a new expense with input asks first: by ✕, the back button or a swipe.
+  setLeaveGuard(() => !payingId && !editingId && isDirty());
 
   // Built before any await so that focus() stays inside the user's tap.
   view.replaceChildren(
     el('header', { class: 'form-head' },
-      el('a', { class: 'icon-button', href: '#/', 'aria-label': 'Закрыть', onClick: closeForm }, '✕'),
+      backButton(editingId ? `#/tx?id=${editingId}` : '#/', { modal: true }),
       title,
       el('label', { class: 'date-button' }, dateLabel, dateInput)),
     el('div', { class: 'amount-box' }, amountInput, currencyLabel),

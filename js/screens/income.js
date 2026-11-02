@@ -7,6 +7,7 @@ import {
   shortName, sortAccounts, updateTransaction,
 } from '../ledger.js';
 import { amountToTyping, formatMoney, formatRate, parseAmount, parseRate, todayIso } from '../money.js';
+import { setLeaveGuard } from '../nav.js';
 import { el } from '../ui/dom.js';
 import { amountBox, dateRow, doneLink, firstIssue, formHead, formRow, savedScreen, withConfirmations } from '../ui/form.js';
 import { openPicker } from '../ui/picker.js';
@@ -240,13 +241,14 @@ export function renderIncome({ view, params, isCurrent }) {
   }
 
   view.replaceChildren(
-    formHead(editingId ? 'Изменить поступление' : 'Поступление'),
+    formHead(editingId ? 'Изменить поступление' : 'Поступление', { modal: true, href: editingId ? `#/tx?id=${editingId}` : '#/' }),
     amount.box,
     error,
     form,
     el('div', { class: 'save-bar' }, saveButton),
   );
   if (!editingId) amount.input.focus();
+  setLeaveGuard(() => !editingId && Boolean(amount.input.value || comment.value.trim()));
 
   async function load() {
     const [accounts, objects, categories, counterparties, balances, settings, incomes, editing] = await Promise.all([
