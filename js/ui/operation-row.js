@@ -1,5 +1,5 @@
 // One operation in a list: the same row on the home screen and in the journal.
-import { shortName } from '../ledger.js';
+import { accountName, shortName } from '../ledger.js';
 import { formatDate, formatMoney } from '../money.js';
 import { el } from './dom.js';
 import { icon } from './icons.js';
@@ -10,7 +10,7 @@ function describe(tx, refs) {
     const target = refs.accounts.get(tx.to_account_id);
     return {
       title: account.currency !== target.currency ? 'Обмен валюты' : 'Перевод',
-      place: `${account.name} → ${target.name}`,
+      place: `${accountName(account)} → ${accountName(target)}`,
       amount: formatMoney(tx.amount, account.currency),
       tone: '',
     };
@@ -18,7 +18,7 @@ function describe(tx, refs) {
   const income = tx.type === 'income';
   return {
     title: shortName(refs.categories.get(tx.category_id)?.name ?? ''),
-    place: refs.objects.get(tx.object_id)?.name ?? account.name,
+    place: refs.objects.get(tx.object_id)?.name ?? accountName(account),
     amount: formatMoney(income ? tx.amount : -tx.amount, account.currency, { signed: true }),
     tone: income ? 'income' : '',
   };

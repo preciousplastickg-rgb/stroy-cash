@@ -215,7 +215,14 @@ export async function reportMonths() {
   return months.reverse();
 }
 
+// "Ноябрь 2026" for headings, chips and lists; monthInText gives "ноябрь 2026"
+// for the middle of a sentence.
 export function monthTitle(month) {
+  const text = monthInText(month);
+  return text[0].toUpperCase() + text.slice(1);
+}
+
+export function monthInText(month) {
   return `${monthName(month)} ${month.slice(0, 4)}`;
 }
 
@@ -496,7 +503,7 @@ function excelDate(iso) {
 
 function sheetHeader(company, title, month, status) {
   const state = status === 'closed' ? 'месяц закрыт' : 'месяц открыт, отчёт предварительный';
-  return [[company], [title], [`Период: ${monthTitle(month)}, ${state}`], []];
+  return [[company], [title], [`Период: ${monthInText(month)}, ${state}`], []];
 }
 
 function cashFlowRows(report) {

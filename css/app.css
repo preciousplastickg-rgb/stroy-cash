@@ -596,6 +596,9 @@ select.input { appearance: none; -webkit-appearance: none; }
 .input-pick { display: flex; align-items: center; gap: 8px; text-align: left; color: var(--ink); }
 .input-pick .pick-value { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .input-pick .pick-placeholder { color: var(--ink-3, var(--ink-2)); }
+.input-pick .pick-sub { margin-left: auto; flex: none; font-size: 14px; color: var(--ink-2); font-variant-numeric: tabular-nums; }
+.sheet-save-bar .button { width: 100%; }
+.sheet-save-bar { position: sticky; bottom: 0; z-index: 1; padding: 8px 0 2px; margin-top: -8px; background: linear-gradient(to bottom, transparent, var(--bg) 12px); }
 .input-pick .pick-new { margin-left: auto; flex: none; font-size: 13px; color: var(--accent); }
 
 .page-head + .input { flex: none; }
@@ -638,6 +641,15 @@ select.input { appearance: none; -webkit-appearance: none; }
 .mini-button { min-height: var(--tap); padding: 0 12px; display: inline-flex; align-items: center; border: 1px solid var(--line); border-radius: 10px; font-size: 14px; font-weight: 600; background: var(--surface); color: var(--ink); }
 .mini-button.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
 .recurring-row { align-items: flex-start; }
+.recurring-row { flex-wrap: wrap; }
+.recurring-row .row-buttons { flex-basis: 100%; justify-content: flex-end; margin: 2px 0 4px; }
+.row.settled .row-title { color: var(--ink-2); }
+.row-amount.muted { color: var(--ink-2); }
+.row-side { display: flex; flex-direction: column; align-items: flex-end; flex: none; }
+.row-side .row-note { font-size: 12px; }
+.page-head-action { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+.rows-day { font-size: 13px; font-weight: 600; color: var(--ink-2); padding: 10px 0 0; }
+.rows-day + .rows .row:first-child { border-top: 0; }
 .archived .row-title { color: var(--ink-2); }
 
 .banner.column { flex-direction: column; align-items: flex-start; gap: 2px; padding: 10px 14px 2px; }

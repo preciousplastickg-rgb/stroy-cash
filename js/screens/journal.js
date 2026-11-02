@@ -1,7 +1,7 @@
 // Journal: everything that happened, with filters, search and a total (SPEC §5.6).
 import { db } from '../db.js';
 import { replaceParams } from '../nav.js';
-import { openDebts, shortName, sortAccounts } from '../ledger.js';
+import { accountName, openDebts, shortName, sortAccounts } from '../ledger.js';
 import { formatDate, formatDayMonth, formatMoney, monthOf, todayIso } from '../money.js';
 import { monthTitle } from '../reports.js';
 import { debtRow } from '../ui/debt-row.js';
@@ -238,7 +238,7 @@ export function renderJournal({ view, params, isCurrent }) {
       planned: [...debts, ...planned.filter((tx) => tx.plan_kind !== 'debt').sort((a, b) => a.date.localeCompare(b.date))],
       months,
       refs: { accounts: byId(accounts), objects: byId(objects), categories: byId(categories), counterparties: byId(counterparties) },
-      accountItems: sortAccounts(accounts).map((row) => ({ id: row.id, label: row.name })),
+      accountItems: sortAccounts(accounts).map((row) => ({ id: row.id, label: accountName(row) })),
       objectItems: toItems(objects),
       categoryItems: toItems(categories.filter((row) => row.parent_id)),
       counterpartyItems: toItems(counterparties),

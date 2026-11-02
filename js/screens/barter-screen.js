@@ -4,7 +4,7 @@ import {
   soldByCompany, transferToContractor,
 } from '../barter.js';
 import { db, getSettings } from '../db.js';
-import { DOC_TYPES, shortName, sortAccounts } from '../ledger.js';
+import { DOC_TYPES, allBalances, shortName, sortAccounts } from '../ledger.js';
 import { formatDate, formatMoney, todayIso } from '../money.js';
 import { navigate } from '../nav.js';
 import { el } from '../ui/dom.js';
@@ -20,13 +20,20 @@ const STATUS_LABELS = { held: 'У компании', transferred: 'Переда�
 const FILTERS = [['all', 'Все'], ['held', 'У компании'], ['owes', 'Должны'], ['transferred', 'Переданы'], ['sold_by_company', 'Проданы']];
 
 const toOptions = (rows) => rows.map((row) => ({ value: row.id, label: shortName(row.name) }));
+// Articles of work grouped as in the directory, the way the expense form shows them.
+const workOptions = (refs) => refs.works.map((row) => ({ value: row.id, label: shortName(row.name), group: refs.groups.get(row.parent_id) }));
+// Money accounts with their balance, the main cash desk preselected as before.
+const moneyOptions = (refs) => refs.money.map((row) => ({ value: row.id, label: row.name, sub: formatMoney(refs.balances.get(row.id), row.currency) }));
 const docOptions = () => DOC_TYPES.map((doc) => ({ value: doc.code, label: doc.label }));
 
 async function references() {
-  const [accounts, categories, objects, counterparties, settings] = await Promise.all([
+  const [accounts, categories, objects, counterparties, settings, balances] = await Promise.all([
     db.accounts.toArray(), db.categories.where('kind').equals('expense').toArray(), db.objects.toArray(), db.counterparties.toArray(), getSettings(),
+    allBalances(),
   ]);
   return {
+    balances,
+    groups: new Map(categories.filter((row) => !row.parent_id).map((row) => [row.id, row.name])),
     money: sortAccounts(accounts.filter((row) => row.type !== 'barter' && row.type !== 'imprest' && !row.is_archived)),
     works: categories.filter((row) => row.parent_id && !row.is_archived).sort((a, b) => a.position - b.position),
     objects: objects.filter((row) => row.status === 'active'),
@@ -58,7 +65,7 @@ export function renderBarter({ view, isCurrent }) {
           createLabel: 'Новый покупатель',
           options: toOptions(refs.counterparties.filter((row) => row.type === 'buyer')),
         },
-        { key: 'object_id', label: 'Объект', type: 'select', options: toOptions(refs.objects) },
+        { key: 'object_id', label: 'Объект', type: 'pick', options: toOptions(refs.objects) },
         { key: 'apartment', label: 'Номер квартиры', type: 'text' },
         { key: 'date', label: 'Дата получения', type: 'date', value: todayIso() },
       ],
@@ -150,7 +157,7 @@ export function renderBarterAsset({ view, params, isCurrent }) {
           createLabel: 'Новый подрядчик',
           options: toOptions(refs.counterparties.filter((row) => row.type === 'contractor')),
         },
-        { key: 'category_id', label: 'Статья работ', type: 'select', options: toOptions(refs.works) },
+        { key: 'category_id', label: 'Статья работ', type: 'pick', options: workOptions(refs) },
         {
           key: 'work_amount',
           label: `Работы стоят, ${asset.currency}`,
@@ -176,7 +183,7 @@ export function renderBarterAsset({ view, params, isCurrent }) {
       fields: [
         { key: 'sale_price', label: `Цена продажи подрядчиком, ${asset.currency}`, type: 'amount' },
         { key: 'amount', label: 'Сумма возмещения', type: 'amount' },
-        { key: 'account_id', label: 'Счёт', type: 'select', options: toOptions(refs.money) },
+        { key: 'account_id', label: 'Счёт', type: 'pick', value: refs.money[0]?.id, options: moneyOptions(refs) },
         { key: 'rate', label: 'Курс к сому', type: 'rate', value: refs.lastRate },
         { key: 'reason', label: 'Причина', type: 'text' },
         { key: 'approved_by', label: 'Кто согласовал', type: 'text' },
@@ -195,8 +202,8 @@ export function renderBarterAsset({ view, params, isCurrent }) {
       title: 'Зачесть работы',
       fields: [
         { key: 'amount', label: `Работы на сумму, ${asset.currency}`, type: 'amount', hint: `Долг подрядчика ${formatMoney(owed, asset.currency)}` },
-        { key: 'category_id', label: 'Статья работ', type: 'select', options: toOptions(refs.works) },
-        { key: 'object_id', label: 'Объект', type: 'select', value: asset.object_id, options: toOptions(refs.objects) },
+        { key: 'category_id', label: 'Статья работ', type: 'pick', options: workOptions(refs) },
+        { key: 'object_id', label: 'Объект', type: 'pick', value: asset.object_id, options: toOptions(refs.objects) },
         { key: 'rate', label: 'Курс к сому', type: 'rate', value: refs.lastRate },
         { key: 'date', label: 'Дата', type: 'date', value: todayIso() },
         { key: 'doc_type', label: 'Документ', type: 'select', value: 'act', options: docOptions() },
@@ -213,7 +220,7 @@ export function renderBarterAsset({ view, params, isCurrent }) {
       title: 'Вернул деньгами',
       fields: [
         { key: 'amount', label: `Сумма, ${asset.currency}`, type: 'amount', hint: `Долг подрядчика ${formatMoney(owed, asset.currency)}` },
-        { key: 'account_id', label: 'Куда пришли деньги', type: 'select', options: toOptions(refs.money) },
+        { key: 'account_id', label: 'Куда пришли деньги', type: 'pick', value: refs.money[0]?.id, options: moneyOptions(refs) },
         { key: 'to_amount', label: 'Зачислено, если валюта счёта другая', type: 'amount', optional: true },
         { key: 'rate', label: 'Курс к сому', type: 'rate', value: refs.lastRate },
         { key: 'date', label: 'Дата', type: 'date', value: todayIso() },
@@ -230,7 +237,7 @@ export function renderBarterAsset({ view, params, isCurrent }) {
       title: 'Продано компанией',
       fields: [
         { key: 'sale_price', label: `Цена продажи, ${asset.currency}`, type: 'amount' },
-        { key: 'account_id', label: 'Куда пришли деньги', type: 'select', options: toOptions(refs.money) },
+        { key: 'account_id', label: 'Куда пришли деньги', type: 'pick', value: refs.money[0]?.id, options: moneyOptions(refs) },
         { key: 'to_amount', label: 'Зачислено, если валюта счёта другая', type: 'amount', optional: true },
         { key: 'rate', label: 'Курс к сому', type: 'rate', value: refs.lastRate },
         { key: 'date', label: 'Дата продажи', type: 'date', value: todayIso() },

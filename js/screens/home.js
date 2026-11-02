@@ -5,7 +5,7 @@ import {
   allBalances, isCashTotalAccount, isMoneyAccount, latestTransactions, lenderBalances, openDebts, owedText, personName, sortAccounts,
 } from '../ledger.js';
 import {
-  daysBetween, formatDate, formatDayMonth, formatMoney, formatRate, monthName, monthOf, toKgs, todayIso,
+  addDays, daysBetween, formatDate, formatDayMonth, formatMoney, formatRate, monthName, monthOf, toKgs, todayIso,
 } from '../money.js';
 import { dueSoon } from '../recurring.js';
 import { debtsOverview, monthExpenseSummary } from '../reports.js';
@@ -17,7 +17,7 @@ import { operationRow } from '../ui/operation-row.js';
 import { openPicker } from '../ui/picker.js';
 import { toast } from '../ui/toast.js';
 
-const LATEST_COUNT = 10;
+const LATEST_COUNT = 5; // the full list is the journal
 const BACKUP_WARNING_DAYS = 1;
 
 function sumInKgs(accounts, balances, rate) {
@@ -260,7 +260,27 @@ function operationsCard({ latest, refs }) {
     el('div', { class: 'card-head' },
       el('h2', {}, 'Последние операции'),
       el('a', { class: 'card-action', href: '#/journal' }, 'Журнал')),
-    el('ul', { class: 'rows' }, latest.map((tx) => operationRow(tx, refs))));
+    // By day, as in the journal: the date is said once, the rows keep their place names.
+    groupByDay(latest).flatMap(({ date, rows }) => [
+      el('h3', { class: 'rows-day' }, dayTitle(date)),
+      el('ul', { class: 'rows' }, rows.map((tx) => operationRow(tx, refs, { showDate: false }))),
+    ]));
+}
+
+function groupByDay(operations) {
+  const days = [];
+  for (const tx of operations) {
+    if (days.at(-1)?.date !== tx.date) days.push({ date: tx.date, rows: [] });
+    days.at(-1).rows.push(tx);
+  }
+  return days;
+}
+
+function dayTitle(date) {
+  const today = todayIso();
+  if (date === today) return 'Сегодня';
+  if (date === addDays(today, -1)) return 'Вчера';
+  return date.startsWith(today.slice(0, 4)) ? formatDayMonth(date) : formatDate(date);
 }
 
 // The main actions sit on the screen itself, one tap away, without a second bar

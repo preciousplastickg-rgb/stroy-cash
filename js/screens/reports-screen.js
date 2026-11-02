@@ -1,5 +1,6 @@
 // All eight reports of SPEC §9. One Excel file holds every report of the month.
 import { getSettings } from '../db.js';
+import { accountName } from '../ledger.js';
 import { formatDate, formatMoney, monthOf, todayIso } from '../money.js';
 import {
   LIST_REPORTS, buildExcel, cashFlowReport, monthTitle, objectsReport, periodStatus, reportMonths,
@@ -37,7 +38,7 @@ function card(title, sum, rows) {
 
 function cashFlowCards(report) {
   return [
-    card('Остаток на начало', null, report.accounts.map(({ account, opening }) => line(account.name, opening, account.currency))),
+    card('Остаток на начало', null, report.accounts.map(({ account, opening }) => line(accountName(account), opening, account.currency))),
     card('Поступления', report.income_total, report.income.map((row) => line(row.name, row.amount, 'KGS', { 'data-flow': row.name }))),
     card('Расходы', report.expense_total, report.expense.flatMap((group) => [
       el('li', { class: 'row row-compact report-group' }, el('p', { class: 'row-title' }, group.group), el('p', { class: 'row-amount' }, formatMoney(group.total, 'KGS'))),
@@ -48,7 +49,7 @@ function cashFlowCards(report) {
         el('p', { class: 'row-title' }, `${from.name} → ${to.name}`),
         el('p', { class: 'row-sub' }, formatDate(tx.date))),
       el('p', { class: 'row-amount' }, formatMoney(tx.amount, from.currency))))),
-    card('Остаток на конец', null, report.accounts.map(({ account, closing }) => line(account.name, closing, account.currency))),
+    card('Остаток на конец', null, report.accounts.map(({ account, closing }) => line(accountName(account), closing, account.currency))),
   ];
 }
 

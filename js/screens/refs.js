@@ -114,32 +114,47 @@ const SHAPES = {
   },
 };
 
+const NEW_TITLES = {
+  accounts: 'Новый счёт', people: 'Новый человек', objects: 'Новый объект', categories: 'Новая статья', counterparties: 'Новый контрагент',
+};
+
+const ADD_LABELS = {
+  accounts: 'Добавить счёт', people: 'Добавить человека', objects: 'Добавить объект', categories: 'Добавить статью', counterparties: 'Добавить контрагента',
+};
+
+async function extras() {
+  const [categories, counterparties] = await Promise.all([db.categories.toArray(), db.counterparties.toArray()]);
+  return { groups: new Map(categories.filter((row) => !row.parent_id).map((row) => [row.id, row])), counterparties };
+}
+
+// The sheet of one directory record; other screens open it too, to add an object
+// where the objects are listed. Resolves to true when something was saved.
+export async function editRefRow(table, row) {
+  const shape = SHAPES[table];
+  const storedIn = shape.table ?? table;
+  const extra = await extras();
+  const archived = row && isArchived(storedIn, row);
+  return editSheet({
+    title: row ? (shape.title?.(row) ?? row.name) : NEW_TITLES[table],
+    fields: shape.fields(row, extra),
+    onSave: (values) => saveRef(storedIn, row?.id ?? null, shape.normalize ? shape.normalize(values, row, extra) : values),
+    extraAction: row && !row.is_overhead && {
+      label: archived ? 'Вернуть из архива' : 'В архив',
+      run: async () => {
+        await setRefArchived(storedIn, row.id, !archived);
+        return true;
+      },
+    },
+  });
+}
+
 export function renderRefs({ view, params, isCurrent }) {
   const table = params?.get('table') ?? 'accounts';
   const shape = SHAPES[table];
   const storedIn = shape.table ?? table;
 
-  async function extras() {
-    const [categories, counterparties] = await Promise.all([db.categories.toArray(), db.counterparties.toArray()]);
-    return { groups: new Map(categories.filter((row) => !row.parent_id).map((row) => [row.id, row])), counterparties };
-  }
-
   async function edit(row) {
-    const extra = await extras();
-    const archived = row && isArchived(storedIn, row);
-    const saved = await editSheet({
-      title: row ? (shape.title?.(row) ?? row.name) : `Новая запись: ${TITLES[table]}`,
-      fields: shape.fields(row, extra),
-      onSave: (values) => saveRef(storedIn, row?.id ?? null, shape.normalize ? shape.normalize(values, row, extra) : values),
-      extraAction: row && !row.is_overhead && {
-        label: archived ? 'Вернуть из архива' : 'В архив',
-        run: async () => {
-          await setRefArchived(storedIn, row.id, !archived);
-          return true;
-        },
-      },
-    });
-    if (saved) show();
+    if (await editRefRow(table, row)) show();
   }
 
   async function editGroup(group) {
@@ -192,7 +207,7 @@ export function renderRefs({ view, params, isCurrent }) {
     view.replaceChildren(...[
       formHead(TITLES[table], { href: '#/more' }),
       el('div', { class: isCategories ? 'tx-actions' : 'tx-actions stacked' },
-        el('button', { class: 'button button-primary', type: 'button', 'data-action': 'add-ref', onClick: () => edit(null) }, isCategories ? 'Добавить статью' : 'Добавить'),
+        el('button', { class: 'button button-primary', type: 'button', 'data-action': 'add-ref', onClick: () => edit(null) }, ADD_LABELS[table]),
         isCategories && el('button', { class: 'button', type: 'button', 'data-action': 'add-group', onClick: () => editGroup(null) }, 'Добавить группу')),
       ...(isCategories
         ? groupCards(rows, extra)

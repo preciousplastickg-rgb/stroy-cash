@@ -3,11 +3,11 @@
 import { photoBackup } from '../backup.js';
 import { db } from '../db.js';
 import {
-  LedgerError, closeMonth, createCorrection, reopenMonth,
+  LedgerError, accountName, closeMonth, createCorrection, reopenMonth,
 } from '../ledger.js';
 import { formatDate, formatMoney, monthOf, parseAmount, todayIso } from '../money.js';
 import { dueDateIn } from '../recurring.js';
-import { balancesAtMonthEnd, monthTitle, reportMonths } from '../reports.js';
+import { balancesAtMonthEnd, monthInText, monthTitle, reportMonths } from '../reports.js';
 import { attachAmountInput } from '../ui/amount-input.js';
 import { confirmSheet } from '../ui/confirm.js';
 import { el } from '../ui/dom.js';
@@ -72,7 +72,7 @@ export function renderCloseMonth({ view, isCurrent }) {
       }
       return el('li', { class: 'close-row' },
         el('div', { class: 'row-main' },
-          el('p', { class: 'row-title' }, account.name),
+          el('p', { class: 'row-title' }, accountName(account)),
           el('p', { class: 'row-sub' }, `По учёту ${formatMoney(balance, account.currency)}`)),
         input,
         difference,
@@ -82,7 +82,7 @@ export function renderCloseMonth({ view, isCurrent }) {
     async function close() {
       const missing = [...inputs.values()].find(({ input }) => parseAmount(input.value) === null);
       if (missing) {
-        toast(`Введите факт: ${missing.account.name}`);
+        toast(`Введите факт: ${accountName(missing.account)}`);
         return;
       }
       await closeMonth(month, Object.fromEntries([...inputs.keys()].map((id) => [id, parseAmount(inputs.get(id).input.value)])));
@@ -100,7 +100,7 @@ export function renderCloseMonth({ view, isCurrent }) {
 
     async function reopen(closedMonth) {
       const reason = await askReason({
-        title: `Переоткрыть: ${monthTitle(closedMonth)}`,
+        title: `Переоткрыть ${monthInText(closedMonth)}`,
         message: 'Отчёт за этот месяц снова можно будет изменить. Причина запишется в журнал изменений.',
         confirmLabel: 'Переоткрыть',
       });

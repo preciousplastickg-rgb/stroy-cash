@@ -5,7 +5,7 @@ import { db, getSettings } from '../db.js';
 import { allBalances, isMoneyAccount, personName, sortAccounts } from '../ledger.js';
 import { formatMoney, monthOf, toKgs, todayIso } from '../money.js';
 import { replaceParams } from '../nav.js';
-import { costBreakdown, debtsOverview, monthTitle, reportMonths } from '../reports.js';
+import { costBreakdown, debtsOverview, monthInText, monthTitle, reportMonths } from '../reports.js';
 import { barList } from '../ui/bars.js';
 import { debtDueText, debtRow } from '../ui/debt-row.js';
 import { el } from '../ui/dom.js';
@@ -93,7 +93,7 @@ async function costsChart(state, chooseMonth, setGroup) {
     return `#/analytics?view=money&split=groups&month=${state.month}&group=${key}`;
   };
   const rows = result.items.map((item) => ({ ...item, display: formatMoney(item.amount, 'KGS'), href: hrefOf(item.key) }));
-  const period = month ? monthTitle(month) : 'всё время';
+  const period = month ? monthInText(month) : 'всё время';
   const title = state.split === 'objects' ? 'Затраты по объектам' : groupName ?? 'Затраты по статьям';
   const note = result.owed > 0
     ? `Оплачено ${formatMoney(result.paid, 'KGS')}, ещё должны ${formatMoney(result.owed, 'KGS')}`

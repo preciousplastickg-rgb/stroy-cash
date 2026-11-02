@@ -22,7 +22,8 @@ export function renderLender({ view, params, isCurrent }) {
         {
           key: 'account_id',
           label: 'С какого счёта',
-          type: 'select',
+          type: 'pick',
+          value: accounts[0]?.id,
           options: accounts.map((row) => ({ value: row.id, label: shortName(row.name) })),
         },
         currency === 'USD' && { key: 'rate', label: 'Курс к сому', type: 'rate', value: lastRate },

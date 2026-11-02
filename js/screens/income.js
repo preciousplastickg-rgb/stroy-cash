@@ -18,7 +18,7 @@ export function renderIncome({ view, params, isCurrent }) {
   const editingId = params?.get('edit') ?? null;
   const state = {
     account_id: null, category_id: null, category_text: '', object_id: null, counterparty_id: null, date: todayIso(), rate: null,
-    source_kind: 'company', due_date: null, from_id: null,
+    source_kind: 'customer', due_date: null, from_id: null,
   };
   const refs = {};
   const form = el('div', { class: 'form-body' });

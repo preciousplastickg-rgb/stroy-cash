@@ -2,7 +2,7 @@
 import { db } from '../db.js';
 import { navigate } from '../nav.js';
 import {
-  DOC_TYPES, INCOME_SOURCES, LedgerError, isMonthClosed, reverseTransaction, reverseWithOpposite, shortName,
+  DOC_TYPES, INCOME_SOURCES, LedgerError, accountName, isMonthClosed, reverseTransaction, reverseWithOpposite, shortName,
 } from '../ledger.js';
 import { formatDate, formatMoney, formatRate } from '../money.js';
 import { el } from '../ui/dom.js';
@@ -34,7 +34,7 @@ function shown(key, value, refs, currency) {
   if (value == null || value === '') return 'пусто';
   if (key === 'amount') return formatMoney(value, currency);
   if (key === 'date') return formatDate(value);
-  if (key === 'account_id') return refs.accounts.get(value)?.name ?? '';
+  if (key === 'account_id') return accountName(refs.accounts.get(value));
   if (key === 'object_id') return refs.objects.get(value)?.name ?? '';
   if (key === 'category_id') return shortName(refs.categories.get(value)?.name ?? '');
   if (key === 'counterparty_id') return refs.counterparties.get(value)?.name ?? '';
@@ -129,8 +129,8 @@ export function renderTransaction({ view, params, isCurrent }) {
       el('dl', { class: 'facts' },
         fact('Дата', formatDate(tx.date)),
         fact('Покупка', tx.cost_date && tx.cost_date !== tx.date ? formatDate(tx.cost_date) : null),
-        fact(tx.type === 'transfer' ? 'Откуда' : 'Счёт', account.name),
-        fact('Куда', target?.name),
+        fact(tx.type === 'transfer' ? 'Откуда' : 'Счёт', accountName(account)),
+        fact('Куда', accountName(target)),
         fact('Зачислено', target ? formatMoney(tx.to_amount, target.currency) : null),
         fact('Курс', tx.rate !== 10000 ? formatRate(tx.rate) : null),
         fact('В сомах', account.currency === 'USD' ? formatMoney(tx.amount_kgs, 'KGS') : null),

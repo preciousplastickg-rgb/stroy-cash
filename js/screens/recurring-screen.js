@@ -1,7 +1,9 @@
 // Recurring payments: this and next month's reminders and the templates (SPEC §7).
 import { db } from '../db.js';
-import { sortAccounts, shortName } from '../ledger.js';
-import { formatDate, formatMoney, monthOf, todayIso } from '../money.js';
+import { accountName, sortAccounts, shortName } from '../ledger.js';
+import {
+  addDays, daysBetween, formatDate, formatDayMonth, formatMoney, monthOf, todayIso,
+} from '../money.js';
 import {
   buildIcs, createTemplate, generateInstances, skipInstance, updateTemplate,
 } from '../recurring.js';
@@ -9,6 +11,7 @@ import { monthTitle } from '../reports.js';
 import { el } from '../ui/dom.js';
 import { askReason, editSheet } from '../ui/edit-sheet.js';
 import { formHead } from '../ui/form.js';
+import { openSheet } from '../ui/sheet.js';
 import { deliverFile } from '../ui/share.js';
 
 const STATUS_TEXT = { paid: 'Оплачено', skipped: 'Пропущено' };
@@ -32,15 +35,42 @@ function monthCalendar(month, instances, today) {
   return el('div', { class: 'calendar' }, WEEK.map((name) => el('span', { class: 'calendar-head' }, name)), cells);
 }
 
-function statusText(instance, today) {
-  if (instance.status !== 'pending') {
-    return instance.skip_reason ? `${STATUS_TEXT[instance.status]}: ${instance.skip_reason}` : STATUS_TEXT[instance.status];
-  }
-  return instance.due_date < today ? 'Просрочено' : 'К оплате';
+const DUE_SOON_DAYS = 7;
+
+// Templates in the order the month goes.
+function byDay(templates) {
+  return [...templates].sort((a, b) => a.day_of_month - b.day_of_month || a.name.localeCompare(b.name, 'ru'));
+}
+
+function plural(count, [one, few, many]) {
+  const lastTwo = count % 100;
+  const last = count % 10;
+  if (lastTwo >= 11 && lastTwo <= 14) return many;
+  if (last === 1) return one;
+  if (last >= 2 && last <= 4) return few;
+  return many;
+}
+
+// "Просрочено на 3 дн., 31.10.2026", the way the home screen says it.
+function dueText(date, today) {
+  const days = daysBetween(today, date);
+  if (days < 0) return `Просрочено на ${-days} дн., ${formatDate(date)}`;
+  if (days === 0) return `Сегодня, ${formatDate(date)}`;
+  if (days === 1) return `Завтра, ${formatDate(date)}`;
+  return `Через ${days} дн., ${formatDate(date)}`;
+}
+
+// In the month list the date is enough for a payment that is simply ahead.
+function monthNote(instance, today) {
+  const date = formatDayMonth(instance.due_date);
+  if (instance.status === 'pending') return instance.due_date < today ? `${date}, просрочено` : date;
+  const status = STATUS_TEXT[instance.status].toLowerCase();
+  return `${date}, ${status}${instance.skip_reason ? `: ${instance.skip_reason}` : ''}`;
 }
 
 export function renderRecurring({ view, isCurrent }) {
   const today = todayIso();
+  const expanded = new Set();
   let refs = null;
 
   async function skip(instance, template) {
@@ -52,16 +82,52 @@ export function renderRecurring({ view, isCurrent }) {
     show();
   }
 
-  function instanceRow(instance, template, paid) {
-    const overdue = instance.status === 'pending' && instance.due_date < today;
+  // Due soon or overdue: the actions are on the row itself, on a line of their own so
+  // the name and the date keep the whole width.
+  function dueRow(instance, template, paid) {
+    const overdue = instance.due_date < today;
     return el('li', { class: `row recurring-row${overdue ? ' overdue' : ''}`, 'data-instance': template.name },
       el('div', { class: 'row-main' },
         el('p', { class: 'row-title' }, template.name),
-        el('p', { class: 'row-sub' }, `${formatDate(instance.due_date)}, ${statusText(instance, today)}`),
-        instance.status === 'pending' && el('div', { class: 'row-buttons' },
-          el('a', { class: 'mini-button primary', href: `#/expense/new?instance=${instance.id}` }, 'Оплатить'),
-          el('button', { class: 'mini-button', type: 'button', onClick: () => skip(instance, template) }, 'Пропустить'))),
-      el('p', { class: 'row-amount' }, formatMoney(paid?.amount ?? template.amount, 'KGS')));
+        el('p', { class: 'row-sub' }, dueText(instance.due_date, today))),
+      el('p', { class: 'row-amount' }, formatMoney(paid?.amount ?? template.amount, 'KGS')),
+      el('div', { class: 'row-buttons' },
+        el('button', { class: 'mini-button', type: 'button', onClick: () => skip(instance, template) }, 'Пропустить'),
+        el('a', { class: 'mini-button primary', href: `#/expense/new?instance=${instance.id}` }, 'Оплатить')));
+  }
+
+  // The month list: one line per payment. A paid one opens its operation, a pending
+  // one offers the same two actions in a sheet.
+  function monthRow(instance, template, paid) {
+    const overdue = instance.status === 'pending' && instance.due_date < today;
+    const done = instance.status !== 'pending';
+    const content = [
+      el('span', { class: 'row-main' },
+        el('span', { class: 'row-title' }, template.name),
+        el('span', { class: 'row-sub' }, monthNote(instance, today))),
+      el('span', { class: `row-amount${done ? ' muted' : ''}` }, formatMoney(paid?.amount ?? template.amount, 'KGS')),
+    ];
+    const attrs = { class: `row row-button${overdue ? ' overdue' : ''}${done ? ' settled' : ''}`, 'data-instance': template.name };
+    if (paid) return el('li', {}, el('a', { ...attrs, href: `#/tx?id=${paid.id}` }, ...content));
+    if (done) return el('li', {}, el('div', { ...attrs, class: attrs.class.replace(' row-button', '') }, ...content));
+    return el('li', {}, el('button', { ...attrs, type: 'button', onClick: () => actions(instance, template) }, ...content));
+  }
+
+  function actions(instance, template) {
+    const sheet = openSheet({
+      title: template.name,
+      body: el('div', { class: 'edit-sheet' },
+        el('p', { class: 'confirm-text' }, `${formatDate(instance.due_date)}, ${formatMoney(template.amount, 'KGS')}${template.amount_is_fixed ? '' : ', сумма примерная'}`),
+        el('a', { class: 'button button-primary', href: `#/expense/new?instance=${instance.id}`, onClick: () => sheet.close() }, 'Оплатить'),
+        el('button', {
+          class: 'button',
+          type: 'button',
+          onClick: () => {
+            sheet.close();
+            skip(instance, template);
+          },
+        }, 'Пропустить')),
+    });
   }
 
   function templateFields(template) {
@@ -77,9 +143,15 @@ export function renderRecurring({ view, isCurrent }) {
         options: [{ value: 'fixed', label: 'Фиксированная' }, { value: 'approx', label: 'Примерная' }],
       },
       { key: 'day_of_month', label: 'Число месяца', type: 'number', value: template?.day_of_month },
-      { key: 'account_id', label: 'Счёт', type: 'select', value: template?.account_id, options: select(refs.accounts) },
-      { key: 'category_id', label: 'Статья', type: 'select', value: template?.category_id, options: select(refs.categories) },
-      { key: 'object_id', label: 'Объект', type: 'select', value: template?.object_id ?? refs.overheadId, options: select(refs.objects) },
+      { key: 'account_id', label: 'Счёт', type: 'pick', value: template?.account_id ?? refs.accounts[0]?.id, options: refs.accounts.map((row) => ({ value: row.id, label: accountName(row) })) },
+      {
+        key: 'category_id',
+        label: 'Статья',
+        type: 'pick',
+        value: template?.category_id,
+        options: refs.categories.map((row) => ({ value: row.id, label: shortName(row.name), group: refs.groups.get(row.parent_id) })),
+      },
+      { key: 'object_id', label: 'Объект', type: 'pick', value: template?.object_id ?? refs.overheadId, options: select(refs.objects) },
       {
         key: 'counterparty_id',
         label: 'Контрагент',
@@ -133,6 +205,7 @@ export function renderRecurring({ view, isCurrent }) {
     refs = {
       accounts: sortAccounts(accounts.filter((row) => row.type !== 'barter' && !row.is_archived)),
       categories: categories.filter((row) => row.parent_id && !row.is_archived).sort((a, b) => a.position - b.position),
+      groups: new Map(categories.filter((row) => !row.parent_id).map((row) => [row.id, row.name])),
       objects: objects.filter((row) => row.status === 'active'),
       counterparties: counterparties.filter((row) => !row.is_archived),
       overheadId: objects.find((row) => row.is_overhead)?.id,
@@ -140,25 +213,46 @@ export function renderRecurring({ view, isCurrent }) {
     const byTemplate = new Map(templates.map((row) => [row.id, row]));
     const byInstance = new Map(payments.map((row) => [row.recurring_instance_id, row]));
     const months = [...new Set(instances.map((row) => monthOf(row.due_date)))].filter((month) => month >= monthOf(today)).sort();
-    const overdue = instances.filter((row) => row.status === 'pending' && monthOf(row.due_date) < monthOf(today));
-    const section = (title, rows, calendar = null) => rows.length > 0 && el('section', { class: 'card' },
-      el('div', { class: 'card-head' }, el('h2', {}, title)),
-      calendar,
-      el('ul', { class: 'rows' }, rows.sort((a, b) => a.due_date.localeCompare(b.due_date))
-        .map((row) => instanceRow(row, byTemplate.get(row.template_id), byInstance.get(row.id)))));
+    const soon = addDays(today, DUE_SOON_DAYS);
+    const due = instances.filter((row) => row.status === 'pending' && row.due_date <= soon).sort((x, y) => x.due_date.localeCompare(y.due_date));
+    const dueTotal = due.reduce((sum, row) => sum + byTemplate.get(row.template_id).amount, 0);
+    const listOf = (rows, render) => el('ul', { class: 'rows' }, [...rows].sort((x, y) => x.due_date.localeCompare(y.due_date))
+      .map((row) => render(row, byTemplate.get(row.template_id), byInstance.get(row.id))));
+
+    const monthCard = (month) => {
+      const rows = instances.filter((row) => monthOf(row.due_date) === month);
+      if (rows.length === 0) return null;
+      const pending = rows.filter((row) => row.status === 'pending').reduce((sum, row) => sum + byTemplate.get(row.template_id).amount, 0);
+      const current = month === monthOf(today);
+      const open = current || expanded.has(month);
+      return el('section', { class: 'card', 'data-month': month },
+        el('div', { class: 'card-head' },
+          el('h2', {}, monthTitle(month)),
+          el('p', { class: 'card-sum muted' }, pending > 0 ? `осталось ${formatMoney(pending, 'KGS')}` : 'всё закрыто')),
+        open ? [monthCalendar(month, rows, today), listOf(rows, monthRow)] : el('button', {
+          class: 'list-action',
+          type: 'button',
+          'data-action': 'expand-month',
+          onClick: () => {
+            expanded.add(month);
+            show();
+          },
+        }, `Показать ${rows.length} ${plural(rows.length, ['платёж', 'платежа', 'платежей'])}`));
+    };
 
     view.replaceChildren(...[
       formHead('Регулярные платежи', { href: '#/more' }),
-      section('Просрочено', overdue),
-      ...months.map((month) => {
-        const rows = instances.filter((row) => monthOf(row.due_date) === month);
-        return section(monthTitle(month), rows, monthCalendar(month, rows, today));
-      }),
+      due.length > 0 && el('section', { class: 'card', 'data-section': 'due' },
+        el('div', { class: 'card-head' },
+          el('h2', {}, 'К оплате'),
+          el('p', { class: 'card-sum' }, formatMoney(dueTotal, 'KGS'))),
+        listOf(due, dueRow)),
+      ...months.map(monthCard),
       el('section', { class: 'card' },
         el('div', { class: 'card-head' },
           el('h2', {}, 'Шаблоны'),
           el('button', { class: 'card-action', type: 'button', 'data-action': 'add-template', onClick: () => editTemplate(null) }, 'Добавить')),
-        el('ul', { class: 'rows' }, templates.map((template) => el('li', {}, el('button', {
+        el('ul', { class: 'rows' }, byDay(templates).map((template) => el('li', {}, el('button', {
           class: 'row row-button', type: 'button', 'data-template': template.name, onClick: () => editTemplate(template),
         },
         el('span', { class: 'row-main' },

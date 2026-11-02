@@ -20,11 +20,12 @@ export const DOC_TYPES = [
 export const MAX_PHOTOS = 3;
 
 // Where incoming money came from. Founder's money and loans are debts of the company.
+// Customer money is what usually comes in, so it goes first and is the default.
 export const INCOME_SOURCES = [
+  { code: 'customer', label: 'Заказчик', person: 'От кого', type: 'customer' },
   { code: 'company', label: 'Из кассы', person: null },
   { code: 'founder', label: 'Учредитель', person: 'Кто дал', type: 'founder' },
   { code: 'loan', label: 'В долг', person: 'Кто дал', type: 'lender' },
-  { code: 'customer', label: 'Заказчик', person: 'От кого', type: 'customer' },
 ];
 
 const OWED_SOURCES = ['founder', 'loan'];
@@ -687,6 +688,12 @@ export async function createCorrection(accountId, delta, date) {
 // A person money goes through is an imprest account (SPEC §11).
 export function personName(account) {
   return account.name.replace(/^Подотчёт:\s*/, '');
+}
+
+// How an account is called on screen: a person by name, without the prefix.
+export function accountName(account) {
+  if (!account) return '';
+  return account.type === 'imprest' ? personName(account) : account.name;
 }
 
 // What the company owes to founders and lenders, per person. A debt is kept in the

@@ -3,10 +3,11 @@
 import { db } from '../db.js';
 import { navigate } from '../nav.js';
 import { formatMoney, monthOf, todayIso } from '../money.js';
-import { monthTitle, objectsReport } from '../reports.js';
+import { monthInText, objectsReport } from '../reports.js';
 import { debtRow } from '../ui/debt-row.js';
 import { el } from '../ui/dom.js';
 import { formHead } from '../ui/form.js';
+import { editRefRow } from './refs.js';
 
 function costNote(paid, owed) {
   return owed > 0 ? `Оплачено ${formatMoney(paid, 'KGS')}, ещё должны ${formatMoney(owed, 'KGS')}` : null;
@@ -14,10 +15,17 @@ function costNote(paid, owed) {
 
 export function renderObjects({ view, isCurrent }) {
   const month = monthOf(todayIso());
-  objectsReport(month).then((entries) => {
+
+  async function add() {
+    if (await editRefRow('objects', null)) show();
+  }
+
+  const show = () => objectsReport(month).then((entries) => {
     if (!isCurrent()) return;
     view.replaceChildren(
-      el('header', { class: 'page-head' }, el('h1', {}, 'Объекты')),
+      el('header', { class: 'page-head page-head-action' },
+        el('h1', {}, 'Объекты'),
+        el('button', { class: 'card-action', type: 'button', 'data-action': 'add-object', onClick: add }, 'Добавить')),
       entries.length === 0
         ? el('p', { class: 'stub-note' }, 'Объектов пока нет')
         : el('section', { class: 'card' }, el('ul', { class: 'rows' }, entries.map((entry) => {
@@ -26,12 +34,15 @@ export function renderObjects({ view, isCurrent }) {
           return el('li', {}, el('a', { class: 'row row-button', href: `#/object?id=${entry.object.id}`, 'data-object': entry.object.name },
             el('div', { class: 'row-main' },
               el('p', { class: 'row-title' }, entry.object.name),
-              el('p', { class: 'row-sub' }, `За ${monthTitle(month)}: ${formatMoney(monthCost, 'KGS')}`),
+              el('p', { class: 'row-sub' }, `За ${monthInText(month)}: ${formatMoney(monthCost, 'KGS')}`),
               entry.all.owed > 0 && el('p', { class: 'row-sub' }, `Ещё должны ${formatMoney(entry.all.owed, 'KGS')}`)),
-            el('p', { class: 'row-amount' }, formatMoney(allCost, 'KGS'))));
+            el('div', { class: 'row-side' },
+              el('p', { class: 'row-amount' }, formatMoney(allCost, 'KGS')),
+              el('p', { class: 'row-note' }, 'за всё время'))));
         }))),
     );
   });
+  show();
 }
 
 export function renderObject({ view, params, isCurrent }) {
