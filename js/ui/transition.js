@@ -160,6 +160,13 @@ export function startTransition(view, direction, { offset = 0, stashAs = null } 
   timer = setTimeout(play, WAIT_FOR_CONTENT_MS);
 }
 
+// After the data is erased no swipe may show how the screens looked before.
+export function forgetScreens() {
+  finishRunning();
+  snapshots.clear();
+  dropUnderlay();
+}
+
 // The screen a swipe leads to, under the finger. side: 'back' (the screen below,
 // with parallax), 'prev' or 'next' (a neighbouring tab, edge to edge).
 export function peek(view, key, side) {

@@ -1,15 +1,14 @@
 // Restore from data.json and, if there is one, a ZIP with photos. The summary comes
 // first, and the current data is saved to a file before it is replaced (SPEC §10).
 import {
-  backupSummary, buildBackup, parseBackup, restoreBackup, restorePhotos,
+  backupSummary, parseBackup, restoreBackup, restorePhotos, saveCopyBefore,
 } from '../backup.js';
 import { db } from '../db.js';
-import { formatDate, formatMoney, todayIso } from '../money.js';
+import { formatDate, formatMoney } from '../money.js';
 import { confirmSheet } from '../ui/confirm.js';
 import { el } from '../ui/dom.js';
 import { formHead } from '../ui/form.js';
 import { switchTab } from '../nav.js';
-import { deliverFile } from '../ui/share.js';
 import { toast } from '../ui/toast.js';
 
 export function renderRestore({ view }) {
@@ -21,8 +20,7 @@ export function renderRestore({ view }) {
   async function saveCurrent() {
     const operations = await db.transactions.count();
     if (operations === 0) return;
-    const json = JSON.stringify(await buildBackup(), null, 1);
-    await deliverFile(new Blob([json], { type: 'application/json' }), `kassa-before-restore-${todayIso()}.json`);
+    await saveCopyBefore('restore');
   }
 
   async function apply() {

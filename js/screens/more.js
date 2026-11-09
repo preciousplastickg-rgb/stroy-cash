@@ -1,6 +1,8 @@
-import { currentMonth, photoBackup, quickBackup } from '../backup.js';
-import { getSettings } from '../db.js';
-import { switchTab } from '../nav.js';
+import {
+  currentMonth, eraseAllData, photoBackup, quickBackup, saveCopyBefore,
+} from '../backup.js';
+import { db, getSettings } from '../db.js';
+import { restart, switchTab } from '../nav.js';
 import { setLastUsdRate, updateSettings } from '../ledger.js';
 import { todayIso } from '../money.js';
 import { generateInstances } from '../recurring.js';
@@ -14,6 +16,7 @@ import { editSheet } from '../ui/edit-sheet.js';
 import { firstIssue } from '../ui/form.js';
 import { openPicker } from '../ui/picker.js';
 import { toast } from '../ui/toast.js';
+import { forgetScreens } from '../ui/transition.js';
 import { APP_VERSION } from '../version.js';
 import { showPinScreen } from './pin.js';
 
@@ -42,6 +45,47 @@ async function leaveDemo() {
   if (!confirmed) return;
   await startClean();
   switchTab('/');
+}
+
+// «Удалить все данные» (SPEC §10): the PIN if there is one, a confirmation, then a
+// backup file. Without the file nothing is erased: it is the only way back.
+async function eraseEverything() {
+  const operations = await db.transactions.count();
+  const confirmed = await confirmSheet({
+    title: 'Удалить все данные?',
+    message: `С этого телефона удалятся ${operations > 0 ? `все операции (${operations}), ` : ''}счета, люди, объекты, `
+      + 'контрагенты, статьи, регулярные платежи, бартер, фото, PIN и название компании. '
+      + 'Сначала откроется сохранение бэкапа: вернуть данные можно только из него.',
+    confirmLabel: 'Удалить',
+    cancelLabel: 'Отмена',
+    danger: true,
+  });
+  if (!confirmed) return;
+  let saved = false;
+  try {
+    saved = await saveCopyBefore('erase');
+  } catch (error) {
+    console.error(error);
+  }
+  if (!saved) {
+    toast('Бэкап не сохранён, данные не удалены');
+    return;
+  }
+  try {
+    await eraseAllData();
+  } catch (error) {
+    console.error(error);
+    toast('Не удалось удалить данные. Попробуйте ещё раз.');
+    return;
+  }
+  forgetScreens();
+  restart('/welcome');
+  toast('Все данные удалены');
+}
+
+async function askErase() {
+  if (await isPinSet()) showPinScreen({ onDone: eraseEverything, onCancel: () => {} });
+  else await eraseEverything();
 }
 
 async function backupNow() {
@@ -91,6 +135,7 @@ const ICONS = {
   'Отключить PIN': ['lock', 'gray'],
   'Название компании': ['briefcase', 'gray'],
   'Курс доллара': ['rate', 'green'],
+  'Удалить все данные': ['trash', 'red'],
   'Сбросить демо-данные': ['restore', 'red'],
   'Начать работу со своими данными': ['play', 'red'],
 };
@@ -174,6 +219,8 @@ export function renderMore({ view, isCurrent }) {
         action('Название компании', renameCompany),
         action('Курс доллара', changeRate),
       ]),
+      // The demo has its own way out below, «Начать работу со своими данными».
+      !settings.is_demo && menu('Начать заново', [action('Удалить все данные', askErase, true)]),
       settings.is_demo && menu('Демо', [action('Сбросить демо-данные', resetDemo, true), action('Начать работу со своими данными', leaveDemo, true)]),
       el('p', { class: 'version' }, `Версия ${APP_VERSION}`),
     ].filter(Boolean));

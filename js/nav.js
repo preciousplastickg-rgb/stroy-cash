@@ -237,6 +237,20 @@ export function switchTab(path, { direction = 'fade', offset = 0 } = {}) {
   });
 }
 
+// After all data is erased: the path becomes the only screen, as at first start.
+// Back from it leaves the app instead of returning to screens of the erased data.
+export function restart(path) {
+  if (overlays.length > 0) dropOverlays();
+  whenIdle(async () => {
+    const depth = entry.depth;
+    leave();
+    if (depth > 0) await traverse(-depth);
+    history.replaceState({ key: newKey(), depth: 0 }, '', `#${path}`);
+    entry = history.state;
+    show('none');
+  });
+}
+
 // A sheet registers here when it opens. onPop closes it when the back button pops
 // its entry; the returned release() is called when the sheet closes by itself.
 export function pushOverlay(onPop) {

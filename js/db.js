@@ -163,7 +163,8 @@ export async function ensureDefaults() {
   });
 }
 
-// Demo reset only (STAGE1 §4). Operations are never deleted anywhere else.
+// Wipes the whole ledger at once: demo reset (STAGE1 §4) and «Удалить все данные»
+// after a backup file (SPEC §10). Single operations are never deleted anywhere.
 export async function clearAllData() {
   await db.transaction('rw', db.tables, async () => {
     await Promise.all(db.tables.map((table) => table.clear()));

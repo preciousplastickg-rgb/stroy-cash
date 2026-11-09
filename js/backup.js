@@ -1,6 +1,8 @@
 // Backups (SPEC §10). The quick one is every table as readable JSON without photos,
 // the photo backup is a ZIP per month. A restore replaces everything, in one transaction.
-import { SCHEMA_VERSION, db, ensureDefaults, getSettings, nowIso } from './db.js';
+import {
+  Dexie, SCHEMA_VERSION, clearAllData, db, ensureDefaults, getSettings, nowIso,
+} from './db.js';
 import { balanceFromTransactions, isMoneyAccount, updateSettings } from './ledger.js';
 import { monthOf, todayIso } from './money.js';
 import { deliverFile } from './ui/share.js';
@@ -23,6 +25,23 @@ export async function quickBackup() {
   const delivered = await deliverFile(await backupFile(), `kassa-backup-${todayIso()}.json`);
   if (delivered) await updateSettings({ last_backup_at: nowIso() });
   return delivered;
+}
+
+// The data as it is right before a restore replaces it or an erase removes it.
+// Resolves to false when the share menu is closed without saving.
+export async function saveCopyBefore(reason) {
+  return deliverFile(await backupFile(), `kassa-before-${reason}-${todayIso()}.json`);
+}
+
+const SNAPSHOTS_DB = 'stroy-cash-snapshots';
+
+// «Удалить все данные» (SPEC §10): the app goes back to its first start, with only
+// the defaults of an empty app. The copies kept before schema upgrades go too, so
+// nothing of the old data stays on the phone. The screen saves a backup first.
+export async function eraseAllData() {
+  await clearAllData();
+  await Dexie.delete(SNAPSHOTS_DB);
+  await ensureDefaults();
 }
 
 export function backupAgeDays(settings, today) {
@@ -146,7 +165,7 @@ export async function snapshotBeforeMigration(DexieClass, name = 'stroy-cash', t
     tables[table.name] = table.name === 'attachments' ? rows.map(({ blob, ...row }) => row) : rows;
   }
   current.close();
-  const snapshots = new DexieClass('stroy-cash-snapshots');
+  const snapshots = new DexieClass(SNAPSHOTS_DB);
   snapshots.version(1).stores({ snapshots: 'created_at' });
   await snapshots.table('snapshots').put({ created_at: nowIso(), schema_version: version, tables });
   snapshots.close();
