@@ -142,13 +142,15 @@ export function editSheet({ title, fields, saveLabel = 'Сохранить', onS
         error,
         el('div', { class: 'sheet-save-bar' }, el('button', { class: 'button button-primary', type: 'button', 'data-action': 'sheet-save', onClick: save }, saveLabel)),
         secondAction && el('button', { class: 'list-action', type: 'button', 'data-action': 'sheet-second', onClick: () => secondAction.run() }, secondAction.label),
-        extraAction && el('button', {
+        // One action or several (an article: to the archive, delete).
+        [extraAction].flat().filter(Boolean).map((action) => el('button', {
           class: 'list-action danger',
           type: 'button',
+          'data-action': action.id ?? null,
           onClick: async () => {
-            if (await extraAction.run()) sheet.close(true);
+            if (await action.run()) sheet.close(true);
           },
-        }, extraAction.label)),
+        }, action.label))),
     });
   });
 }

@@ -1,6 +1,8 @@
 // The only place operations are written and balances are calculated.
 // Balances are never stored: they are always derived from posted transactions.
-import { db, getSettings, insertRow, updateRow } from './db.js';
+import {
+  db, deleteRow, getSettings, insertRow, updateRow,
+} from './db.js';
 import {
   RATE_ONE, amountInWords, computeAmountKgs, formatMoney, formatRate, monthOf, rateFromAmounts, toKgs, todayIso,
 } from './money.js';
@@ -824,6 +826,72 @@ export async function setRefArchived(table, id, archived) {
   return db.transaction('rw', db.table(table), db.audit_log, () => {
     const change = table === 'objects' ? { status: archived ? 'archived' : 'active' } : { is_archived: archived };
     return updateRow(table, id, change, archived ? 'archive' : 'restore');
+  });
+}
+
+// Articles the app looks up by code: bank fees, cash corrections, loans, customer
+// payments, barter (SPEC §4, §8). They can be renamed or archived, not deleted.
+export function isSystemCategory(row) {
+  return Boolean(row?.parent_id && row.code);
+}
+
+async function closedMonths() {
+  return new Set((await db.periods.where('status').equals('closed').toArray()).map((period) => period.month));
+}
+
+// What would move with an article: operations of any status and recurring templates.
+export async function categoryUsage(id) {
+  const [operations, templates, closed] = await Promise.all([
+    db.transactions.where('category_id').equals(id).toArray(),
+    db.recurring_templates.filter((template) => template.category_id === id).toArray(),
+    closedMonths(),
+  ]);
+  return {
+    operations: operations.length,
+    templates: templates.length,
+    inClosedMonths: operations.filter((tx) => closed.has(monthOf(tx.date))).length,
+  };
+}
+
+// Deletes an article (SPEC §5.11, by the user's request). Its operations and templates
+// move to the article `moveTo` of the same kind first, every move logged. A closed
+// month keeps its report, so an article with operations there is not deleted.
+export async function deleteCategory(id, moveTo = null) {
+  const tables = [db.categories, db.transactions, db.recurring_templates, db.periods, db.audit_log];
+  return db.transaction('rw', tables, async () => {
+    const row = await db.categories.get(id);
+    if (!row?.parent_id) throw new LedgerError('invalid', [{ code: 'not_found', message: 'Статья не найдена' }]);
+    if (isSystemCategory(row)) {
+      throw new LedgerError('invalid', [{ code: 'system_category', message: 'Эту статью приложение ставит само. Её можно переименовать или убрать в архив.' }]);
+    }
+    const usage = await categoryUsage(id);
+    if (usage.inClosedMonths > 0) {
+      throw new LedgerError('invalid', [{ code: 'month_closed', message: 'Операции с этой статьёй есть в закрытом месяце. Его отчёт не меняется.' }]);
+    }
+    if (usage.operations + usage.templates > 0) {
+      const target = moveTo ? await db.categories.get(moveTo) : null;
+      if (!target?.parent_id || target.id === id || target.kind !== row.kind) {
+        throw new LedgerError('invalid', [{ field: 'category_id', code: 'required', message: 'Выберите, в какую статью перенести операции' }]);
+      }
+      const operations = await db.transactions.where('category_id').equals(id).toArray();
+      for (const tx of operations) await updateRow('transactions', tx.id, { category_id: target.id }, 'move');
+      const templates = await db.recurring_templates.filter((template) => template.category_id === id).toArray();
+      for (const template of templates) await updateRow('recurring_templates', template.id, { category_id: target.id }, 'move');
+    }
+    await deleteRow('categories', id);
+    return usage;
+  });
+}
+
+// A group goes only when it holds no articles.
+export async function deleteCategoryGroup(id) {
+  return db.transaction('rw', db.categories, db.audit_log, async () => {
+    const row = await db.categories.get(id);
+    if (!row || row.parent_id) throw new LedgerError('invalid', [{ code: 'not_found', message: 'Группа не найдена' }]);
+    if (await db.categories.where('parent_id').equals(id).count() > 0) {
+      throw new LedgerError('invalid', [{ code: 'group_not_empty', message: 'Сначала удалите или перенесите статьи этой группы' }]);
+    }
+    await deleteRow('categories', id);
   });
 }
 

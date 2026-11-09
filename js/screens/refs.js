@@ -1,13 +1,18 @@
 // Directories: accounts, people, objects, articles, counterparties. Records in use are
-// archived, never deleted (SPEC §5.11).
+// archived, never deleted (SPEC §5.11). Articles are the exception: one can be
+// deleted after its operations move to another article.
 import { db } from '../db.js';
 import {
-  COUNTERPARTY_GROUPS, personName, saveRef, setRefArchived, shortName, sortAccounts,
+  COUNTERPARTY_GROUPS, categoryUsage, deleteCategory, deleteCategoryGroup, isSystemCategory, personName, saveRef, setRefArchived,
+  shortName, sortAccounts,
 } from '../ledger.js';
-import { formatMoney, todayIso } from '../money.js';
+import { formatMoney, pluralRu, todayIso } from '../money.js';
+import { confirmSheet } from '../ui/confirm.js';
 import { el } from '../ui/dom.js';
 import { editSheet } from '../ui/edit-sheet.js';
-import { formHead } from '../ui/form.js';
+import { firstIssue, formHead } from '../ui/form.js';
+import { openPicker } from '../ui/picker.js';
+import { toast } from '../ui/toast.js';
 
 const TITLES = {
   accounts: 'Счета', people: 'Люди', objects: 'Объекты', categories: 'Статьи и группы', counterparties: 'Контрагенты',
@@ -127,6 +132,62 @@ async function extras() {
   return { groups: new Map(categories.filter((row) => !row.parent_id).map((row) => [row.id, row])), counterparties };
 }
 
+const operationsText = (count) => `${count} ${pluralRu(count, ['операция', 'операции', 'операций'])}`;
+
+// An article in use: first where its operations go, then one confirmation.
+// Resolves to true when the article is gone.
+async function deleteArticle(row) {
+  const name = shortName(row.name);
+  if (isSystemCategory(row)) {
+    toast('Эту статью приложение ставит само. Её можно переименовать или убрать в архив.');
+    return false;
+  }
+  const usage = await categoryUsage(row.id);
+  if (usage.inClosedMonths > 0) {
+    toast(`${operationsText(usage.inClosedMonths)} с этой статьёй в закрытом месяце: его отчёт не меняется`);
+    return false;
+  }
+  const used = usage.operations + usage.templates > 0;
+  let moveTo = null;
+  if (used) {
+    const [categories, groups] = await Promise.all([db.categories.toArray(), extras().then((extra) => extra.groups)]);
+    moveTo = await openPicker({
+      title: usage.operations > 0
+        ? `Куда перенести ${usage.operations} ${pluralRu(usage.operations, ['операцию', 'операции', 'операций'])}`
+        : 'Куда перенести регулярные платежи',
+      searchPlaceholder: 'Статья',
+      items: categories
+        .filter((item) => item.parent_id && item.kind === row.kind && item.id !== row.id && !item.is_archived)
+        .sort((a, b) => a.position - b.position)
+        .map((item) => ({ id: item.id, label: shortName(item.name), sub: groups.get(item.parent_id)?.name })),
+    });
+    if (!moveTo) return false;
+  }
+  const target = moveTo && shortName((await db.categories.get(moveTo)).name);
+  const moving = [
+    usage.operations > 0 && operationsText(usage.operations),
+    usage.templates > 0 && `${usage.templates} ${pluralRu(usage.templates, ['регулярный платёж', 'регулярных платежа', 'регулярных платежей'])}`,
+  ].filter(Boolean).join(' и ');
+  const confirmed = await confirmSheet({
+    title: `Удалить «${name}»?`,
+    message: used
+      ? `В статью «${target}» перейдут: ${moving}. Вернуть обратно одним нажатием будет нельзя.`
+      : 'Статьи нет ни в одной операции.',
+    confirmLabel: 'Удалить',
+    cancelLabel: 'Отмена',
+    danger: true,
+  });
+  if (!confirmed) return false;
+  try {
+    await deleteCategory(row.id, moveTo);
+  } catch (error) {
+    toast(firstIssue(error));
+    return false;
+  }
+  toast(used ? `Статья удалена, операции в «${target}»` : 'Статья удалена');
+  return true;
+}
+
 // The sheet of one directory record; other screens open it too, to add an object
 // where the objects are listed. Resolves to true when something was saved.
 export async function editRefRow(table, row) {
@@ -138,13 +199,17 @@ export async function editRefRow(table, row) {
     title: row ? (shape.title?.(row) ?? row.name) : NEW_TITLES[table],
     fields: shape.fields(row, extra),
     onSave: (values) => saveRef(storedIn, row?.id ?? null, shape.normalize ? shape.normalize(values, row, extra) : values),
-    extraAction: row && !row.is_overhead && {
-      label: archived ? 'Вернуть из архива' : 'В архив',
-      run: async () => {
-        await setRefArchived(storedIn, row.id, !archived);
-        return true;
+    extraAction: row && !row.is_overhead && [
+      {
+        id: 'archive-ref',
+        label: archived ? 'Вернуть из архива' : 'В архив',
+        run: async () => {
+          await setRefArchived(storedIn, row.id, !archived);
+          return true;
+        },
       },
-    },
+      table === 'categories' && { id: 'delete-category', label: 'Удалить статью', run: () => deleteArticle(row) },
+    ],
   });
 }
 
@@ -158,7 +223,22 @@ export function renderRefs({ view, params, isCurrent }) {
   }
 
   async function editGroup(group) {
+    const empty = group && await db.categories.where('parent_id').equals(group.id).count() === 0;
     const saved = await editSheet({
+      extraAction: empty && {
+        id: 'delete-group',
+        label: 'Удалить группу',
+        run: async () => {
+          try {
+            await deleteCategoryGroup(group.id);
+          } catch (error) {
+            toast(firstIssue(error));
+            return false;
+          }
+          toast('Группа удалена');
+          return true;
+        },
+      },
       title: group ? group.name : 'Новая группа статей',
       fields: [
         { key: 'name', label: 'Название группы', type: 'text', value: group?.name },

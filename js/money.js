@@ -113,7 +113,7 @@ const SCALES = [
   { forms: ['миллиард', 'миллиарда', 'миллиардов'], feminine: false },
 ];
 
-function pluralRu(n, [one, few, many]) {
+export function pluralRu(n, [one, few, many]) {
   const lastTwo = n % 100;
   const last = n % 10;
   if (lastTwo >= 11 && lastTwo <= 14) return many;

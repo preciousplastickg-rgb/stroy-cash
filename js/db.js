@@ -69,6 +69,14 @@ export async function updateRow(tableName, id, changes, action = 'update') {
   return after;
 }
 
+// A directory record that nothing refers to any more (an article after its operations
+// moved, SPEC §5.11). Operations themselves are never deleted.
+export async function deleteRow(tableName, id) {
+  const before = await db.table(tableName).get(id);
+  await db.table(tableName).delete(id);
+  await writeAudit(tableName, id, 'delete', before, null);
+}
+
 export async function getSettings() {
   return db.settings.toCollection().first();
 }
